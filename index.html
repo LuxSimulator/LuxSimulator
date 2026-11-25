@@ -495,6 +495,7 @@
     <div class="row"><span>Prepared by *</span><input type="text" id="gBy" style="width:180px" placeholder="Your name"></div>
     <div style="font-size:11px;opacity:.6;margin:2px 0 10px">These details appear on the report and name the exported files.</div>
     <button class="btn" id="gateStart" disabled style="width:100%;opacity:.5">Start illuminance check</button>
+    <button class="btn" id="gateStartPdf" disabled style="width:100%;opacity:.5;margin-top:6px">📄 Start + import PDF drawing…</button>
     <div style="display:flex;align-items:center;gap:8px;margin:14px 0 12px">
       <div style="flex:1;height:1px;background:var(--line2)"></div>
       <div style="font-size:10.5px;opacity:.5">or</div>
@@ -672,6 +673,7 @@
     <button class="btn sm" id="exportPdf" title="Full illuminance design check as a PDF">📕 Export PDF</button>
     <button class="btn sm" id="exportDxf" title="Layout as DXF for the drawing set — fittings as blocks, rooms, lux grid, on separate layers">📐 Export DXF</button>
     <span class="sep"></span>
+    <button class="btn sm" id="planImportPdf" title="Import a floor plan (PDF or image) as the drawing underlay" onclick="document.getElementById('underlayFile').click()">📄 Import PDF</button>
     <button class="btn sm" id="saveModel" title="Save the whole design as a .luxmodel you can reopen">💾 Save model</button>
     <button class="btn sm" id="loadModel" title="Open a saved .luxmodel">📂 Open model</button>
     
@@ -9901,6 +9903,7 @@ function gateCheck(){
   const ok=$("gProject").value.trim()&&$("gArea").value.trim()&&$("gBy").value.trim();
   $("gateStart").disabled=!ok;
   $("gateStart").style.opacity=ok?"1":"0.5";
+  const gp=$("gateStartPdf");if(gp){gp.disabled=!ok;gp.style.opacity=ok?"1":"0.5";}
 }
 ["gProject","gArea","gBy"].forEach(id=>$(id).addEventListener("input",gateCheck));
 
@@ -9915,6 +9918,8 @@ $("gateStart").onclick=()=>{
   refresh();
 };
 $("gBy").addEventListener("keydown",e=>{if(e.key==="Enter"&&!$("gateStart").disabled)$("gateStart").click();});
+// start and go straight to the floor plan: the file picker opens on the same click
+$("gateStartPdf").onclick=()=>{if($("gateStartPdf").disabled)return;$("gateStart").click();$("underlayFile").click();};
 
 // Open a saved model straight from the start screen: applyModel() restores the
 // project details along with everything else and dismisses the gate itself, so

@@ -353,6 +353,20 @@
   .fitsum .stat{text-align:left}
   .fitsum .stat .l{font-size:9.5px;letter-spacing:1px;opacity:.6}
   .fitsum .stat .v{font-size:13px;font-weight:600;font-family:inherit;white-space:nowrap}
+  #statHead{flex-direction:column;align-items:stretch!important;gap:6px!important;overflow:visible!important}
+  #statHead .rs-row{display:flex;align-items:center;gap:14px;min-width:0}
+  .rchips{display:flex;gap:6px;flex:1 1 auto;min-width:0;overflow-x:auto;scrollbar-width:thin;padding:2px 0}
+  .rchip{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;padding:5px 10px;border-radius:9px;font-size:12px;
+    background:var(--btnBg);border:1px solid var(--line2);color:var(--text);cursor:pointer;font-family:inherit;white-space:nowrap}
+  .rchip i{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .rchip b{font-weight:700;max-width:140px;overflow:hidden;text-overflow:ellipsis}
+  .rchip span{opacity:.75;font-family:ui-monospace,monospace;font-size:11px}
+  .rchip em{font-style:normal;font-weight:700}
+  .rchip.ok em{color:var(--ok)}
+  .rchip.bad{border-color:rgba(255,95,95,.6);background:linear-gradient(180deg,rgba(255,95,95,.14),rgba(255,95,95,.05)),var(--btnBg)}
+  .rchip.bad em{color:var(--bad)}
+  .rchip.sel{box-shadow:0 0 0 2px var(--accent)}
+  .rchip:hover{filter:none;border-color:var(--accent)}
   @media (prefers-reduced-motion:reduce){#navInk,#railNav button svg,.btn.ico svg{transition:none}}
   @media print{#rail{display:none}}
 </style>
@@ -2152,8 +2166,10 @@ function compute(){
       const ux=Math.cos(rot),uy=Math.sin(rot);
       for(let i=0;i<S;i++){
         const o=(-0.5+(i+0.5)/S)*f.lenM, sx=lt.x+ux*o, sy=lt.y+uy*o;
-        if(useIes)srcs.push({x:sx,y:sy,h,mh,ies:linkedIes,rotDeg,aim,iesScale:iesMul/S,cOff:+f.cOffset||0,fl:(linkedIes.computedFlux||linkedIes.ratedLumens||0)*iesMul/S});
-        else{const m=beamExponent(f.beam);srcs.push({x:sx,y:sy,m,h,mh,aim,I0:((f.lumens/S)*(m+1))/(2*Math.PI),fl:(+f.lumens||0)/S});}
+        // batS/batI: which segment of which batten — the A27 bounce ray-cast
+        // casts the middle one for the whole batten (patches are >= 0.25 m).
+        if(useIes)srcs.push({x:sx,y:sy,h,mh,ies:linkedIes,rotDeg,aim,iesScale:iesMul/S,cOff:+f.cOffset||0,fl:(linkedIes.computedFlux||linkedIes.ratedLumens||0)*iesMul/S,batS:S,batI:i});
+        else{const m=beamExponent(f.beam);srcs.push({x:sx,y:sy,m,h,mh,aim,I0:((f.lumens/S)*(m+1))/(2*Math.PI),fl:(+f.lumens||0)/S,batS:S,batI:i});}
       }
     }else{
       if(useIes)srcs.push({x:lt.x,y:lt.y,h,mh,ies:linkedIes,rotDeg,aim,iesScale:iesMul,cOff:+f.cOffset||0,fl:(linkedIes.computedFlux||linkedIes.ratedLumens||0)*iesMul});
@@ -2555,6 +2571,28 @@ function compute(){
       const R=regions[rg];if(!R.sF)R.sF={c:0,w:0,fb:0};
       stripBuckets(s2,R,R.rv);
     }
+    // A27 — fittings: which wall and ceiling patches their light lands on, cast
+    // exactly as the strips are, into a deposit of their own (reg.fx.dep).
+    // Not during a drag preview: that keeps the even A1 spread for speed, and
+    // the exact compute on release places it.
+    // A16 (BOUNCE_RAD): fittings go through the SAME zonal radiosity as the LED
+    // strips — their first incidence on ceiling / walls / plane, solved — so they
+    // are cast into the region's strip deposit, always (the magnitude needs it).
+    const BOUNCE_RAD=!(typeof window!=="undefined"&&window.__bounceHeur);
+    if(BOUNCE_RAD||!fastPreview)for(const s2 of srcs){
+      if(s2.strip||!(s2.fl>0))continue;
+      if(s2.batS&&s2.batI!==(s2.batS>>1))continue;        // one cast per batten, from its middle
+      let rg=0;
+      if(rooms.length){const ri=roomIndexNear(s2,0.45);rg=ri>=0?regOfRoom[ri]:-1;}
+      if(rg<0||!regions[rg])continue;
+      const R=regions[rg];
+      if(BOUNCE_RAD){if(!R.sF)R.sF={c:0,w:0,fb:0};stripBuckets(fitRayCast(s2,R.pts),R,R.rv);continue;}
+      if(!R.fx)R.fx={pts:R.pts,wp:R.wp,openIv:R.openIv,sF:{c:0,w:0,fb:0}};
+      stripBuckets(fitRayCast(s2,R.pts),R.fx,R.rv);
+    }
+    const gAll=BOUNCE_RAD?grid.slice():null;   // every direct lux on the plane, before any bounce
+    // the fittings' own light on the plane (maintained), before any bounce is added
+    const gFit=regions.some(r=>r.fx)?(gS?Float32Array.from(grid,(v,i)=>v-gS[i]):grid.slice()):null;
     // room cavity: walls up to ceiling height; effective surface reflectance
     const cellA=(L/nx)*(W/ny);
     for(const reg of regions){
@@ -2670,8 +2708,8 @@ function compute(){
       // the average and per point (-3.6% and 5.3% against -4.7% and 5.9%),
       // while being slightly more optimistic on U0 (+26% against +21%).
       const Eindirect_avg = (Fdown*rhoAvg*(1-directFrac)/directFrac) / area * (1-room.rhoF);
-      const Ei=Math.max(0,Eindirect_avg)*room.mf;
-      ambientSum+=Ei;ambientN++;
+      const Ei=BOUNCE_RAD?0:Math.max(0,Eindirect_avg)*room.mf;
+      if(!BOUNCE_RAD){ambientSum+=Ei;}ambientN++;
       // A1 — distribute the inter-reflected component by GEOMETRY rather than by a
       // distance-to-wall proxy. For each cell take the configuration factor to the
       // ceiling; what it does not see of the ceiling, it sees of the walls, which
@@ -2686,7 +2724,7 @@ function compute(){
       const rc=Math.max(0.02,rhoCC), kw=Math.max(0,room.rhoW)/rc;
       const w=new Array(cellIdx.length);
       let wsum=0;
-      const fcA=(reg.sF||reg.sumS>0)?new Float32Array(cellIdx.length):null;
+      const fcA=(BOUNCE_RAD||reg.sF||reg.sumS>0)?new Float32Array(cellIdx.length):null;
       for(let c=0;c<cellIdx.length;c++){
         // position back out of the cell index rather than carrying a parallel
         // coordinate array — same arithmetic, no allocation.
@@ -2699,11 +2737,40 @@ function compute(){
         const v=fr+(1-fr)*kw;
         w[c]=v;wsum+=v;
       }
-      if(wsum>1e-9){
+      // A27 — WHERE the first bounce of the fittings' light comes from. The
+      // magnitude above stays (calibrated on G8), but the first reflection is
+      // placed physically: each wall / ceiling patch the fittings' light
+      // actually reached returns rho x that flux as a Lambertian emitter, and so
+      // does the ceiling above the floor they lit (floor cavity -> ceiling ->
+      // plane). Only what is left of Ei after that is spread by the A1 shape.
+      // A washer by one wall lights that wall and the floor beside it: before
+      // this the bounce was flat across the room (Radiance, 5 x 30 deg 0.15 m
+      // off a wall: far side 16 lx against 9). Mean per region unchanged, so
+      // every average stays put; only the spread (min, U0, points) moves.
+      let FB=null, fbK=0, rest=Ei;
+      if(reg.fx&&reg.fx.dep&&Ei>0){
+        const D=reg.fx.dep;
+        if(D.wTot>0)stripWallToCeil(D,room.rhoW);
+        if(D.cTot>0||D.wTot>0){
+          FB=stripFirstBounce(D,reg.rv,cellIdx,nx,ny,L,W);
+          let m=0;for(let c=0;c<FB.length;c++)m+=FB[c];m/=FB.length;
+          // At most the FIRST-bounce share of the whole inter-reflected light,
+          // (1 - rho_avg) by the geometric series of an enclosure: the later
+          // bounces are smooth and stay with the A1 spread. Without the cap a
+          // narrow room whose walls take most of the flux (T025) handed all of
+          // Ei to the first bounce and lost the smooth part (min -17% vs Radiance).
+          const cap=Ei*Math.max(0,1-rhoAvg);
+          if(m>1e-9){fbK=m>cap?cap/m:1;rest=Ei-m*fbK;}else FB=null;
+
+        }
+      }
+      if(BOUNCE_RAD){/* the radiosity below carries all of it */}
+      else if(wsum>1e-9){
         const scale=cellIdx.length/wsum;                 // renormalise so mean -> 1
-        for(let c=0;c<cellIdx.length;c++)grid[cellIdx[c]]+=Ei*w[c]*scale;
+        if(FB)for(let c=0;c<cellIdx.length;c++)grid[cellIdx[c]]+=FB[c]*fbK+rest*w[c]*scale;
+        else for(let c=0;c<cellIdx.length;c++)grid[cellIdx[c]]+=Ei*w[c]*scale;
       }else{
-        for(const idx of cellIdx)grid[idx]+=Ei;
+        for(let c=0;c<cellIdx.length;c++)grid[cellIdx[c]]+=FB?FB[c]*fbK+rest:Ei;
       }
       // LED STRIPS — inter-reflected light, by the zonal-cavity radiosity method.
       // Three surfaces bound the space above the work plane: the ceiling, the
@@ -2720,13 +2787,18 @@ function compute(){
       if(fcA){
         const sf=reg.sF||{c:0,w:0,fb:0};
         const wpR=reg.wp!=null?reg.wp:room.workPlane;
-        const Aw=per*hc, Afc=per*Math.max(0,wpR), As=area+Afc;
-        const rFc=(room.rhoF*area+room.rhoW*Afc)/As;
+        // A16: with fittings in the radiosity, furniture enters it as it does
+        // the old model — its sides are extra enclosure surface at their own
+        // reflectance (lumped with the walls), its tops part of the floor.
+        const AsideR=BOUNCE_RAD?Aside:0;
+        const Aw=per*hc+AsideR, Afc=per*Math.max(0,wpR), As=area+Afc;
+        const rFc=((BOUNCE_RAD?rhoFeff:room.rhoF)*area+room.rhoW*Afc)/As;
         const rP=rFc*area/(As-rFc*As+rFc*area);                    // floor cavity, effective
         let fm=0;for(let c=0;c<fcA.length;c++)fm+=fcA[c];fm/=fcA.length;
         const Fcw=1-fm, Fwc=area*Fcw/Aw, Fww=Math.max(0,1-2*Fwc);
-        const Ec=sf.c/area, Ew=sf.w/Aw, Ep=(reg.sumS*cellA+sf.fb)/area;   // first incidence, lx
-        const rc=room.rhoC, rw=room.rhoW;
+        // plane: strip light, plus (A16) every fitting's direct light too
+        const Ec=sf.c/area, Ew=sf.w/Aw, Ep=((reg.sumS+(BOUNCE_RAD?reg.sumE:0))*cellA+sf.fb)/area;   // first incidence, lx
+        const rc=room.rhoC, rw=AsideR>0?(room.rhoW*(Aw-AsideR)+rhoFurnSide*AsideR)/Aw:room.rhoW;
         let Mc=0,Mw=0,Mp=0;
         for(let it=0;it<500;it++){
           const nc=rc*(Ec+fm*Mp+Fcw*Mw), nw=rw*(Ew+Fwc*(Mc+Mp)+Fww*Mw), np=rP*(Ep+fm*Mc+Fcw*Mw);
@@ -2745,11 +2817,33 @@ function compute(){
         // taken patch by patch too.
         // Likewise a washed wall lights the ceiling beside it, not all of it.
         if(reg.dep&&reg.dep.wTot>0)stripWallToCeil(reg.dep,rw);
-        if(reg.dep&&gS&&reg.sumS>0)stripFloorToCeil(reg.dep,gS,cellIdx,nx,ny,L,W,cellA,rP);
+        if(BOUNCE_RAD){if(reg.dep&&(reg.sumS+reg.sumE)>0)stripFloorToCeil(reg.dep,gAll,cellIdx,nx,ny,L,W,cellA,rP);}
+        else if(reg.dep&&gS&&reg.sumS>0)stripFloorToCeil(reg.dep,gS,cellIdx,nx,ny,L,W,cellA,rP);
         let es=0;
         const fb1=reg.dep&&(reg.dep.cTot>0||reg.dep.wTot>0)?stripFirstBounce(reg.dep,reg.rv,cellIdx,nx,ny,L,W):null;
         const Mc2=fb1?Mc-rc*reg.dep.cTot/area:Mc, Mw2=fb1?Mw-rw*reg.dep.wTot/Aw:Mw;
-        for(let c=0;c<cellIdx.length;c++){const v=Mc2*fcA[c]+Mw2*(1-fcA[c])+(fb1?fb1[c]:0);grid[cellIdx[c]]+=v;es+=v;}
+        // A16: furniture hides part of the room from a point beside it — the
+        // bounced light it receives is scaled by the cosine-weighted share of
+        // its view upward that no block cuts (24 rays, 3 m). Rooms with no
+        // furniture skip this entirely.
+        let vis=null;
+        if(BOUNCE_RAD&&OBS){
+          if(!fitVisDirs){fitVisDirs=[];for(let i=0;i<3;i++)for(let j=0;j<8;j++){const r2=Math.sqrt((i+0.5)/3),ph=(j+0.5+i*0.33)/8*2*Math.PI;
+            fitVisDirs.push([r2*Math.cos(ph),r2*Math.sin(ph),Math.sqrt(1-r2*r2)]);}}
+          vis=new Float32Array(cellIdx.length);
+          const kBlk=Math.min(1,rhoFurnSide/Math.max(0.05,room.rhoW));
+          for(let c=0;c<cellIdx.length;c++){const idx=cellIdx[c];
+            const x=((idx%nx)+0.5)/nx*L, y=(((idx/nx)|0)+0.5)/ny*W, z=wpArr?wpArr[idx]:room.workPlane;
+            let open=0;
+            for(const d of fitVisDirs){const x1=x+d[0]*3,y1=y+d[1]*3,z1=z+d[2]*3;let hit=false;
+              for(let q=0;q<OBS.length;q++)if(raySpans(OBS[q],x,y,z+1e-3,x1,y1,z1)){hit=true;break;}
+              if(!hit)open++;}
+            // a blocked ray sees the block face, which returns light too: weighted
+            // by its reflectance against the walls it hides (the faces are lit
+            // by the same room)
+            vis[c]=(open+(fitVisDirs.length-open)*kBlk)/fitVisDirs.length;}
+        }
+        for(let c=0;c<cellIdx.length;c++){const v=(Mc2*fcA[c]+Mw2*(1-fcA[c])+(fb1?fb1[c]:0))*(vis?vis[c]:1);grid[cellIdx[c]]+=v;es+=v;}
         ambientSum+=es/cellIdx.length;
       }
     }
@@ -3503,9 +3597,17 @@ function stripBuckets(s,R,room){
     const E=D.edges[RAY_EDGE];if(!E)return false;const v=ivAt(l,(hx-E.a.x)*E.ux+(hy-E.a.y)*E.uy);
     return !!v&&!(zh>v[2]+1e-6);};
   let c=0,w=0,fb=0;
+  // s.dmin (fittings only): distance to the nearest wall. A ray that reaches
+  // the plane, or the ceiling, inside that radius cannot have met a wall, so
+  // it needs no polygon cast — most of a downlight's rays.
+  const dmin=s.dmin;
   for(const d of s.dirs){
     const dx=ca*d.x1-sa*d.y1, dy=sa*d.x1+ca*d.y1, dz=d.z1, hl=Math.hypot(dx,dy);
-    const tw=hl>1e-9?rayPolyT(o.x,o.y,dx/hl,dy/hl,R.pts):Infinity, eg=RAY_EDGE;
+    if(dmin!=null){
+      if(dz<-1e-9&&z>wp&&(z-wp)*hl/(-dz)<dmin)continue;           // on the plane: measured
+    }
+    const tw=(dmin!=null&&dz>1e-9&&hl*(H-z)/dz<=dmin)?Infinity
+            :hl>1e-9?rayPolyT(o.x,o.y,dx/hl,dy/hl,R.pts):Infinity, eg=RAY_EDGE;
     const f=d.w*k;
     if(dz>1e-9){
       const tc=(H-z)/dz;
@@ -3596,6 +3698,57 @@ function stripFirstBounce(D,room,cellIdx,nx,ny,L,W){
     out[c]=lat[j*mx+i]*(1-u)*(1-v)+lat[j*mx+i+1]*u*(1-v)+lat[(j+1)*mx+i]*(1-u)*v+lat[(j+1)*mx+i+1]*u*v;
   }
   return out;
+}
+
+// A27 — FITTINGS' FIRST BOUNCE, from where their light actually lands.
+// A fitting's output as a set of WORLD-frame ray directions for the strip
+// ray-cast (stripBuckets): sampled in the LUMINAIRE frame, finely near the beam
+// axis (1 deg to 30 deg, then 5 deg) so a 10 deg spot is resolved, then turned
+// by the fitting's aim. Weights are candela x dOmega WITHOUT the source's own
+// scale (iesScale / I0), so one set serves every fitting of that optic and aim.
+const FIT_DIRS=new Map(), FIT_IES_N=new WeakMap();let FIT_IES_K=0, fitVisDirs=null;
+function fitDirSet(s){
+  let ik;
+  if(s.ies){let n=FIT_IES_N.get(s.ies);if(n==null){n=++FIT_IES_K;FIT_IES_N.set(s.ies,n);}ik="i"+n;}else ik="p"+s.m;
+  const a=s.aim;
+  const key=ik+"|"+(a?[a.ca,a.sa,a.ct,a.st].map(v=>v.toFixed(6)).join(","):"-")+"|"+(s.ies&&!a?(s.rotDeg||0):0)+"|"+(s.cOff||0)+"|"+(s.cutC==null?"":s.cutC);
+  let D=FIT_DIRS.get(key);if(D)return D;
+  if(FIT_DIRS.size>300)FIT_DIRS.clear();
+  D=[];const R=Math.PI/180, NP=24, dp=2*Math.PI/NP, edges=[];
+  for(let t=0;t<30;t++)edges.push(t);for(let t=30;t<=180;t+=5)edges.push(t);
+  for(let b=0;b+1<edges.length;b++){
+    const t0=edges[b]*R,t1=edges[b+1]*R, th=(t0+t1)/2, dOm=(Math.cos(t0)-Math.cos(t1))*dp, sT=Math.sin(th), cT=Math.cos(th);
+    if(s.cutC!=null&&cT<s.cutC)continue;
+    const Ip=s.ies?0:(cT>0?Math.pow(cT,s.m):0);
+    if(!s.ies&&!(Ip>0))continue;
+    for(let j=0;j<NP;j++){
+      const Phi=(j+0.5)*dp;                                   // file C-angle
+      const I=s.ies?IES.candelaAt(s.ies,th/R,Phi/R):Ip;if(!(I>0))continue;
+      const pf=Phi-(s.cOff||0)*R;                              // angle in the luminaire frame
+      const x2=sT*Math.cos(pf), y1=sT*Math.sin(pf), z2=-cT;
+      let dx,dy,dz;
+      if(a){const x1=a.ct*x2-a.st*z2;dz=a.st*x2+a.ct*z2;dx=a.ca*x1-a.sa*y1;dy=a.sa*x1+a.ca*y1;}
+      else{const az=pf+(s.ies?(s.rotDeg||0)*R:0);dx=sT*Math.cos(az);dy=sT*Math.sin(az);dz=z2;}
+      D.push({x1:dx,y1:dy,z1:dz,w:I*dOm});
+    }
+  }
+  FIT_DIRS.set(key,D);return D;
+}
+// The ray-cast stand-in for one fitting source: lm carries its own scale. A
+// fitting just outside its room's outline (a wall light on the line) is cast
+// from 30 mm inside it, or every ray would start "in" the wall.
+function fitRayCast(s,pts){
+  let o={x:s.x,y:s.y};
+  if(pts&&pts.length&&!pip(o,pts)){
+    let best=null,bd=Infinity;
+    for(let i=0;i<pts.length;i++){const a=pts[i],b=pts[(i+1)%pts.length],ex=b.x-a.x,ey=b.y-a.y,L2=ex*ex+ey*ey;if(L2<1e-12)continue;
+      const u=Math.max(0,Math.min(1,((o.x-a.x)*ex+(o.y-a.y)*ey)/L2)),q={x:a.x+u*ex,y:a.y+u*ey},d=Math.hypot(o.x-q.x,o.y-q.y);
+      if(d<bd){bd=d;const L=Math.sqrt(L2);best=[q,-ey/L,ex/L];}}
+    if(best){const [q,nx,ny]=best;const A={x:q.x+nx*0.03,y:q.y+ny*0.03};o=pip(A,pts)?A:{x:q.x-nx*0.03,y:q.y-ny*0.03};}
+  }
+  let dmin=Infinity;
+  if(pts)for(let i=0;i<pts.length;i++)dmin=Math.min(dmin,distToSeg(o,pts[i],pts[(i+1)%pts.length]));
+  return{x:s.x,y:s.y,probe:o,mh:s.mh,rotDeg:0,lm:(s.ies?s.iesScale:s.I0)*(s.batS||1),dirs:fitDirSet(s),dmin:isFinite(dmin)?dmin*0.999:0};
 }
 
 // ---- drawing on the plan ----
@@ -4030,7 +4183,7 @@ function selPointer(p,e){
     for(const ob of obstructions)if(selSet.O.has(ob.id))o.O.set(ob.id,{x0:ob.x0,y0:ob.y0,x1:ob.x1,y1:ob.y1});
     for(const m of measures)if(selSet.M.has(m.id))o.M.set(m.id,{a:{...m.a},b:{...m.b}});
     for(const r of rooms)if(selSet.R.has(r.id))o.R.set(r.id,roomMovePts(r).map(q=>({x:q.x,y:q.y})));
-    selMove={start:p,o,moved:false};
+    selMove={start:p,o,moved:false,it};
     renderSelExtras();draw();return;
   }
   selBox={a:p,b:p,add};draw();
@@ -4189,9 +4342,9 @@ function renderSelFit(){
   el.append(t,inp,u);
   // AIM DIRECTION of an aimed fitting (aim° > 0 on its type): 0° = +x (right
   // on the plan), 90° = +y. ⟲/⟳ turn it 15°; R / Ctrl+click turn it 45°.
-  if(isAimed(f)){
+  {
     const da=document.createElement("span");da.style.marginLeft="10px";
-    da.textContent="Aim direction ("+(+f.tilt)+"° tilt): ";
+    da.textContent=isAimed(f)?"Aim direction ("+(+f.tilt)+"° tilt): ":"Rotation: ";
     const ai=document.createElement("input");ai.type="number";ai.step="15";ai.id="selFitRot";
     ai.style.cssText="width:62px;margin:0 4px";ai.value=String(+((lt.rot||0)).toFixed(1));
     ai.title="Which way this fitting's beam points on the plan: 0° = right, 90° = down the sheet. The orange arrow shows it.";
@@ -4847,9 +5000,14 @@ function draw(){
   //   bright  to the first thing in the way — a neighbouring fitting, else the wall
   //   faint   the room's full extent through this point, wall to wall
   // When nothing intervenes the two coincide and only the bright one is drawn.
-  if(!printPlan&&mode==="place"&&hover){
+  // Select tool (Esc): the same dimensions while a fitting is being dragged —
+  // the one grabbed, or the only fitting in the moving set.
+  const selHeldId=(mode==="select"&&selMove&&selMove.moved)?
+    (selMove.it&&selMove.it.k==="L"?selMove.it.id:(selSet.L.size===1?[...selSet.L][0]:null)):null;
+  if(!printPlan&&((mode==="place"&&hover)||selHeldId!=null)){
     // the point in hand: the fitting being dragged, else where it would land
-    const held=drag?(lights.find(l=>l.id===drag.id)||null):null;
+    const hid=drag?drag.id:selHeldId;
+    const held=hid!=null?(lights.find(l=>l.id===hid)||null):null;
     const P0=held?{x:held.x,y:held.y}:hover;
     const rm=roomContaining(P0);
     if(rm){
@@ -5300,49 +5458,42 @@ function updateStats(){
   // check rests on; otherwise up to three rooms show the short form. ----
   const head=$("statHead");
   head.innerHTML="";
-  const focus=focusRoom();
-  if(rooms.length>1){
-    const ok=rooms.filter(r=>roomVerdict(r,roomAvgLux(r),roomTarget(r)).pass).length;
+  // ROW 1 — every room at once: a chip each, red where it fails and why;
+  // click one to select it (it lights up on the plan and fills row 2).
+  const row1=document.createElement("div");row1.className="rs-row";
+  const lpdChip=document.createElement("div");lpdChip.className="stat";
+  lpdChip.innerHTML=`<div class="l">LPD</div><div class="v" style="color:${hasLpdCheck?(passLpd?"var(--ok)":"var(--bad)"):"var(--text)"}">${lpd.toFixed(1)} W/m²</div>`;
+  if(rooms.length){
+    const vds=rooms.map(r=>{const rl=roomAvgLux(r),tg=roomTarget(r);return{r,rl,tg,vd:roomVerdict(r,rl,tg),ut:u0Target(r)};});
+    const ok=vds.filter(x=>x.vd.pass).length;
     const c=document.createElement("div");c.className="stat";
     c.innerHTML=`<div class="l">ROOMS</div><div class="v" style="color:${ok===rooms.length?"var(--ok)":"var(--bad)"}">${ok}/${rooms.length} comply</div>`;
-    head.appendChild(c);
-  }
-  if(focus){
-    head.appendChild(roomSummaryEl(focus));
-  }else if(rooms.length>=1&&rooms.length<=3){
-    for(const r of rooms){
-      const rl=roomAvgLux(r), tg=roomTarget(r);
-      const vd=roomVerdict(r,rl,tg), pass=vd.pass, passL=vd.okL;
-      const passU=vd.okU;
-      const blk=document.createElement("div");
-      blk.style.cssText="display:flex;gap:14px;align-items:center;padding:0 6px;border-left:3px solid "+(r.color||"#5ee88a");
-      blk.innerHTML=
-        `<div style="font-size:11px;opacity:.75;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}</div>`+
-        `<div class="stat"><div class="l">AVG</div><div class="v" style="color:${passL?"var(--ok)":"var(--bad)"}">${Math.round(rl.avg)} lx</div></div>`+
-        `<div class="stat"><div class="l">MIN</div><div class="v">${Math.round(rl.min)} lx</div></div>`+
-        `<div class="stat"><div class="l">MAX</div><div class="v">${Math.round(rl.max)} lx</div></div>`+
-        `<div class="stat"><div class="l">U₀</div><div class="v" style="color:${passU?"var(--ok)":"var(--bad)"}">${rl.u0.toFixed(2)}</div></div>`+
-        `<div class="stat"><div class="l">TARGET</div><div class="v">${tg} lx</div></div>`+
-        `<div class="stat"><div class="l">RESULT</div><div class="v" style="color:${pass?"var(--ok)":"var(--bad)"}">${pass==null?"—":pass?"COMPLIES":"FAILS"}</div></div>`;
-      head.appendChild(blk);
+    row1.appendChild(c);
+    const chips=document.createElement("div");chips.className="rchips";
+    // failing rooms first, so the problems are the first thing seen
+    vds.sort((p,q)=>(p.vd.pass===q.vd.pass?0:p.vd.pass?1:-1));
+    for(const x of vds){
+      const ch=document.createElement("button");ch.type="button";
+      ch.className="rchip "+(x.vd.pass==null?"na":x.vd.pass?"ok":"bad")+(selectedRoom===x.r.id?" sel":"");
+      const u=x.ut&&x.ut.u0!=null?`U₀ ${x.rl.u0.toFixed(2)}/${x.ut.u0.toFixed(2)}`:"";
+      ch.innerHTML=`<i style="background:${x.r.color||"#5ee88a"}"></i><b></b><span>${Math.round(x.rl.avg)}/${x.tg} lx${u?" · "+u:""}</span><em>${x.vd.pass==null?"—":x.vd.pass?"✓":"✗ "+x.vd.why}</em>`;
+      ch.querySelector("b").textContent=x.r.name||"Room";
+      ch.title=(x.r.name||"Room")+" — "+(x.vd.pass?"complies":x.vd.pass==null?"not calculated":"FAILS on "+x.vd.why)+". Click to select it on the plan.";
+      ch.onclick=()=>{selectedRoom=selectedRoom===x.r.id?null:x.r.id;selected=null;renderRooms();draw();updateStats();};
+      chips.appendChild(ch);
     }
-  }else if(rooms.length>3){
-    const d=document.createElement("div");
-    d.style.cssText="font-size:12px;opacity:.6;align-self:center";
-    d.textContent=`Select a room (or a fitting in it) to see its full compliance figures here`;
-    head.appendChild(d);
+    row1.appendChild(chips);
   }else{
     const d=document.createElement("div");
     d.style.cssText="font-size:12px;opacity:.55;align-self:center";
-    d.textContent="Define a room to see per-room lux — overall averages are not shown";
-    head.appendChild(d);
+    d.textContent="Define a room to see per-room lux and compliance — overall averages are not shown";
+    row1.appendChild(d);
   }
-  // LPD is the J7D3 figure: assessed-room load ÷ assessed-room area
-  const lpdChip=document.createElement("div");
-  lpdChip.className="stat";
-  lpdChip.style.marginLeft="6px";
-  lpdChip.innerHTML=`<div class="l">LPD</div><div class="v" style="color:${hasLpdCheck?(passLpd?"var(--ok)":"var(--bad)"):"var(--text)"}">${lpd.toFixed(1)} W/m²</div>`;
-  head.appendChild(lpdChip);
+  row1.appendChild(lpdChip);
+  head.appendChild(row1);
+  // ROW 2 — the room in focus, in full (every figure the AS/NZS 1680 check rests on)
+  const focus=focusRoom();
+  if(focus){const row2=document.createElement("div");row2.className="rs-row";row2.appendChild(roomSummaryEl(focus));head.appendChild(row2);}
 
   // ---- sidebar verdict: summarise per-room pass/fail ----
   const v=$("verdict");
@@ -5998,7 +6149,7 @@ function gridHandleAt(q){
 const HANDLE_CURSOR={move:"move",l:"ew-resize",r:"ew-resize",t:"ns-resize",b:"ns-resize",
   lt:"nwse-resize",rb:"nwse-resize",rt:"nesw-resize",lb:"nesw-resize","":"default"};
 function hitLight(p){
-  let best=null,bd=Math.max(0.08,12/effScale());
+  let best=null,bd=Math.max(0.1,16/effScale());
   for(const lt of lights){
     const f=fixtures.find(x=>x.id===lt.fixtureId);
     let d;
@@ -6117,6 +6268,7 @@ cv.addEventListener("pointerdown",e=>{
       const f=fixtures.find(x=>x.id===hit.fixtureId);
       if(isPole(f)||isWall(f)||isAimed(f)){hit.rot=((hit.rot||0)+45)%360;selected=hit.id;refresh();}   // poles aim through 360deg
       else if(isBatten(f)||isWall(f)||(f&&f.shape==="exit")){hit.rot=((hit.rot||0)+45)%180;selected=hit.id;refresh();}
+      else if(f){hit.rot=((hit.rot||0)+45)%360;selected=hit.id;refresh();}
       return;
     }
   }
@@ -6487,6 +6639,7 @@ window.addEventListener("keydown",e=>{
     withUndo(()=>{
       if(isPole(f)||isWall(f)||isAimed(f)){lt.rot=((lt.rot||0)+45)%360;refresh();}
       else if(isBatten(f)||isWall(f)||(f&&f.shape==="exit")){lt.rot=((lt.rot||0)+45)%180;refresh();}
+      else if(f){lt.rot=((lt.rot||0)+45)%360;refresh();}
     });
     return;
   }

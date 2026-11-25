@@ -402,10 +402,19 @@
     /* the Selected panel and the mode banner FLOAT over the drawing: when they
        pushed it down, selecting a fitting shrank and rescaled the plan under
        the mouse, and the next click landed beside the fitting */
-    #wrap>#selFitPanel{position:absolute;top:8px;right:8px;z-index:6;max-width:min(640px,70%);max-height:55%;overflow:auto;
-      margin:0!important;box-shadow:0 10px 26px -8px rgba(0,0,0,.7);backdrop-filter:blur(2px)}
-    #wrap>#modeBanner{position:absolute;left:8px;bottom:8px;z-index:6;max-width:min(560px,55%);margin:0!important;
-      font-size:11.5px;opacity:.93;box-shadow:0 8px 20px -8px rgba(0,0,0,.7)}
+    #wrap>#selFitPanel{position:absolute;right:10px;bottom:10px;z-index:6;width:min(430px,60%);margin:0!important;padding:8px 10px!important;
+      background:var(--panel)!important;opacity:1!important;border:1px solid var(--line2)!important;border-left:3px solid var(--accent)!important;
+      border-radius:10px;box-shadow:0 10px 26px -8px rgba(0,0,0,.75);font-size:12px;color:var(--text)}
+    #selFitPanel .fc-head{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+    #selFitPanel .fc-head b{color:var(--accent);font-size:13px}
+    #selFitPanel .fc-head span{flex:1;min-width:0;opacity:.75;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #selFitPanel .fc-spec{font-family:ui-monospace,monospace;font-size:11px;opacity:.85;line-height:1.45;margin-bottom:6px}
+    #selFitPanel .fc-ctl{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+    #selFitPanel .fc-l{margin-left:6px;opacity:.6;font-size:11px}
+    #selFitPanel .fc-ctl input{width:62px;margin:0}
+    #wrap>#modeBanner{position:absolute;left:46px;top:30px;z-index:6;max-width:min(520px,50%);margin:0!important;padding:6px 10px!important;
+      font-size:11px;line-height:1.4;opacity:1!important;background:var(--panel)!important;border:1px solid var(--line2)!important;
+      border-left:3px solid var(--accent)!important;border-radius:8px;color:var(--text);box-shadow:0 8px 20px -8px rgba(0,0,0,.7)}
   }
   /* file actions ride on the plan's readout line (Gus 25/11/2026); the top
      strip above the page is gone, so the panel and the drawing start at the top */
@@ -4255,7 +4264,8 @@ function selectAll(){
 }
 function selPointer(p,e){
   const it=selItemAt(p), add=e.shiftKey||e.ctrlKey||e.metaKey;
-  if(it&&it.k==="L"&&(e.ctrlKey||e.metaKey)&&!e.shiftKey&&selHas(it)){
+  if(it&&it.k==="L"&&(e.ctrlKey||e.metaKey)&&!e.shiftKey){
+    if(!selHas(it)){selClear();selSet.L.add(it.id);selSync();}
     const c=lights.find(l=>l.id===it.id);
     selRot={c,ids:[...selSet.L],o:new Map(lights.filter(l=>selSet.L.has(l.id)).map(l=>[l.id,l.rot||0])),a0:Math.atan2(p.y-c.y,p.x-c.x),moved:false,it};
     return;
@@ -4309,7 +4319,7 @@ function selDragTo(p,e){
 }
 function selPointerUp(){
   if(selRot){const R=selRot;selRot=null;
-    if(!R.moved){selSet.L.delete(R.it.id);selSync();renderSelExtras();}   // a plain Ctrl+click: toggle out, as before
+    if(!R.moved){withUndo(()=>{R.c.rot=(((R.c.rot||0)+45)%360+360)%360;});refresh();}   // a plain Ctrl+click: turn 45 deg, as always
     if(typeof endFastPreview==="function")endFastPreview();draw();return;}
   if(selBox){
     const B=selBox;selBox=null;
@@ -4365,7 +4375,7 @@ function drawSelOverlay(){
 // SELECTED FITTING panel: its own mounting height. Blank = the type height (the
 // bulk value set in the Fittings panel). Rebuilt only when what it shows changes,
 // so typing in the box is never interrupted by a repaint.
-let selFitKey="", selFocusRoomId=undefined;
+let selFitKey="", selFocusRoomId=undefined, selFitHidden=null;
 function renderSelFit(){
   const el=$("selFitPanel");if(!el)return;
   // several fittings picked with the arrow: one height for all of them
@@ -4398,75 +4408,46 @@ function renderSelFit(){
   {const fr=focusRoom(),fid=fr?fr.id:null;if(fid!==selFocusRoomId){selFocusRoomId=fid;updateStats();}}
   const key=lt&&f?[lt.id,lt.mh,lt.x,lt.y,f.id,f.mountH,f.code,f.watts,f.lumens,f.beam,f.cct,f.photoMode,f.iesId,lights.length,lt.rot,f.tilt].join("|"):"";
   if(key===selFitKey)return;selFitKey=key;
-  if(!key){el.style.display="none";el.innerHTML="";return;}
+  if(!key){el.style.display="none";el.innerHTML="";selFitHidden=null;return;}
+  if(selFitHidden!=null&&selFitHidden!==lt.id)selFitHidden=null;
   const th=+f.mountH||2.7, own=lights.filter(l=>l.fixtureId===f.id&&l.mh!=null).length;
+  // COMPACT CARD (Gus 25/11/2026): the spec in two lines and the rotate /
+  // height controls, solid, in the drawing's bottom-right corner, with x to
+  // hide it (it stays hidden until another fitting is picked).
+  if(selFitHidden===lt.id){el.style.display="none";return;}
   el.style.display="block";
   el.innerHTML="";
-  // SPEC SUMMARY: everything about this fitting and how it is used, at a glance
-  {
-    const ies=f.iesId&&typeof IES_LIB!=="undefined"&&IES_LIB[f.iesId];
-    const pm=ies?(f.photoMode==="param"?"Parametric (IES "+f.iesId+" not used)":f.photoMode==="scale"?"IES "+f.iesId+" scaled to lumens":"IES "+f.iesId+" as tested"):"Parametric — no IES file";
-    const lm=ies&&f.photoMode!=="param"&&f.photoMode!=="scale"?(ies.computedFlux||f.lumens):f.lumens;
-    const rm=roomContaining({x:lt.x,y:lt.y});
-    const same=lights.filter(l=>l.fixtureId===f.id), inRoom=rm?same.filter(l=>pip({x:l.x,y:l.y},rm.pts)).length:0;
-    const mh=mhOf(lt,f), tilt=+f.tilt||0;
-    const cells=[
-      ["TYPE",(f.code||"")+" · "+(f.shape||"downlight")],
-      ["POWER",n2(+f.watts||0)+" W"],["OUTPUT",Math.round(lm)+" lm"],["EFFICACY",(+f.watts>0?Math.round(lm/f.watts):"—")+" lm/W"],
-      ["BEAM",(+f.beam||0)+"°"],["CCT",(+f.cct||0)+" K"],
-      ["MOUNTED",n2(mh)+" m"+(lt.mh!=null?" (own)":"")],
-      ["AIM",tilt>0?tilt+"° tilt → "+Math.round(lt.rot||0)+"°":"straight down"],
-      ["PHOTOMETRY",pm],
-      ["ROOM",rm?rm.name:"not in a room"],
-      ["THIS TYPE",same.length+" placed"+(rm?" · "+inRoom+" in "+rm.name:"")+" · "+n2(same.length*(+f.watts||0))+" W"],
-      ["LUX BELOW",Math.round(luxAt(lt.x,lt.y))+" lx"],
-      ["AT",lt.x.toFixed(2)+", "+lt.y.toFixed(2)+" m"]];
-    const sum=document.createElement("div");sum.className="fitsum";
-    sum.innerHTML=`<div class="fitsum-name">${(f.name||f.code||"Fitting").replace(/</g,"&lt;")}</div>`+
-      cells.map(([k,v])=>`<div class="stat"><div class="l">${k}</div><div class="v">${String(v).replace(/</g,"&lt;")}</div></div>`).join("");
-    el.appendChild(sum);
-  }
-  const t=document.createElement("span");
-  t.textContent="Selected "+(f.code||f.name)+" — mounting height of THIS fitting: ";
+  const ies=f.iesId&&typeof IES_LIB!=="undefined"&&IES_LIB[f.iesId];
+  const pm=ies?(f.photoMode==="param"?"parametric":f.photoMode==="scale"?"IES scaled":"IES "+f.iesId):"no IES";
+  const lm=ies&&f.photoMode!=="param"&&f.photoMode!=="scale"?(ies.computedFlux||f.lumens):f.lumens;
+  const rm=roomContaining({x:lt.x,y:lt.y}), mh=mhOf(lt,f), tilt=+f.tilt||0;
+  const esc=v=>String(v).replace(/</g,"&lt;");
+  const head=document.createElement("div");head.className="fc-head";
+  head.innerHTML=`<b>${esc(f.code||"")}</b><span>${esc(String(f.name||"").replace(/^\S+\s*/,""))}</span>`;
+  const x=document.createElement("button");x.className="xbtn";x.textContent="✕";x.title="Hide this card (Esc clears the selection)";
+  x.onclick=e=>{e.stopPropagation();selFitHidden=lt.id;el.style.display="none";};
+  head.appendChild(x);
+  const spec=document.createElement("div");spec.className="fc-spec";
+  spec.textContent=[n2(+f.watts||0)+" W",Math.round(lm)+" lm",(+f.beam||0)+"°",(+f.cct||0)+" K",
+    n2(mh)+" m"+(lt.mh!=null?"*":""),tilt>0?"aim "+tilt+"° → "+Math.round(lt.rot||0)+"°":"rot "+Math.round(lt.rot||0)+"°",
+    pm,rm?rm.name:"no room",Math.round(luxAt(lt.x,lt.y))+" lx below"].join(" · ");
+  const ctl=document.createElement("div");ctl.className="fc-ctl";
+  const setRot=v=>withUndo(()=>{lt.rot=+((((v%360)+360)%360).toFixed(1));refresh();});
+  const mk=(txt,tip,fn)=>{const b=document.createElement("button");b.className="btn sm";b.textContent=txt;b.title=tip;b.onclick=e=>{e.stopPropagation();fn();};return b;};
+  ctl.append(mk("⟲ 45°","Turn 45° anticlockwise (also Ctrl+click / R)",()=>setRot((lt.rot||0)-45)),
+             mk("⟲ 15°","Turn 15° anticlockwise (also Ctrl+wheel)",()=>setRot((lt.rot||0)-15)),
+             mk("⟳ 15°","Turn 15° clockwise (also Ctrl+wheel)",()=>setRot((lt.rot||0)+15)),
+             mk("⟳ 45°","Turn 45° clockwise (also Ctrl+click / R)",()=>setRot((lt.rot||0)+45)));
+  const hl=document.createElement("span");hl.textContent="MH";hl.className="fc-l";
   const inp=document.createElement("input");
   inp.type="number";inp.step="0.05";inp.min="0.05";inp.max="15";inp.id="selFitMh";
-  inp.style.cssText="width:70px;margin:0 4px";
   inp.placeholder=String(th);inp.value=lt.mh!=null?String(lt.mh):"";
-  inp.title="Blank = same as the type ("+th+" m). Enter a height to mount just this one differently.";
-  inp.onchange=()=>{
-    const v=parseFloat(inp.value);
-    withUndo(()=>{
-      if(!isFinite(v)||inp.value.trim()==="")delete lt.mh;
-      else lt.mh=+Math.max(0.05,Math.min(15,v)).toFixed(2);
-      refresh();
-    });
-  };
-  const u=document.createElement("span");u.textContent="m";
-  el.append(t,inp,u);
-  // AIM DIRECTION of an aimed fitting (aim° > 0 on its type): 0° = +x (right
-  // on the plan), 90° = +y. ⟲/⟳ turn it 15°; R / Ctrl+click turn it 45°.
-  {
-    const da=document.createElement("span");da.style.marginLeft="10px";
-    da.textContent=isAimed(f)?"Aim direction ("+(+f.tilt)+"° tilt): ":"Rotation: ";
-    const ai=document.createElement("input");ai.type="number";ai.step="15";ai.id="selFitRot";
-    ai.style.cssText="width:62px;margin:0 4px";ai.value=String(+((lt.rot||0)).toFixed(1));
-    ai.title="Which way this fitting's beam points on the plan: 0° = right, 90° = down the sheet. The orange arrow shows it.";
-    const setRot=v=>withUndo(()=>{lt.rot=+((((v%360)+360)%360).toFixed(1));refresh();});
-    ai.onchange=()=>{const v=parseFloat(ai.value);if(isFinite(v))setRot(v);};
-    const b1=document.createElement("button");b1.className="btn";b1.textContent="⟲ 15°";b1.onclick=()=>setRot((lt.rot||0)-15);
-    const b2=document.createElement("button");b2.className="btn";b2.textContent="⟳ 15°";b2.onclick=()=>setRot((lt.rot||0)+15);
-    const dg=document.createElement("span");dg.textContent="°";
-    el.append(da,ai,dg,b1,b2);
-  }
-  if(lt.mh!=null){
-    const b=document.createElement("button");b.className="btn";b.style.marginLeft="8px";
-    b.textContent="Use type height ("+th+" m)";
-    b.onclick=()=>withUndo(()=>{delete lt.mh;refresh();});
-    el.append(b);
-  }
-  const n=document.createElement("span");n.style.opacity=".7";n.style.marginLeft="8px";
-  n.textContent=own?own+" "+(f.code||"of this type")+(own>1?" are at their own height;":" is at its own height;")+" the rest use "+th+" m (bulk-set in Fittings).":"Blank = type height "+th+" m (bulk-set in Fittings).";
-  el.append(n);
+  inp.title="Mounting height of THIS fitting. Blank = the type's "+th+" m"+(own?" ("+own+" of this type have their own height)":"")+".";
+  inp.onclick=e=>e.stopPropagation();
+  inp.onchange=()=>{const v=parseFloat(inp.value);
+    withUndo(()=>{if(!isFinite(v)||inp.value.trim()==="")delete lt.mh;else lt.mh=+Math.max(0.05,Math.min(15,v)).toFixed(2);refresh();});};
+  ctl.append(hl,inp);
+  el.append(head,spec,ctl);
 }
 function draw(){
   renderSelFit();
@@ -5523,7 +5504,7 @@ function setMode(m){
   else if(m==="plotarea"){b.style.display="block";b.textContent="Set plot area: click two opposite corners of a rectangle — the plot (grid, calculation and report view) crops to that area, excluding everything outside (title blocks, notes, adjacent zones). Reset plot brings the full drawing back.";cv.style.cursor="crosshair";}
   else if(m==="detect"){b.style.display="block";b.textContent="Find fittings: box ONE example — put the SYMBOL in the centre of the box and include its text label (e.g. B3) as well. The tool learns the symbol-to-label offset so every icon lands on the symbol, not the writing. Zoom in first for accuracy.";cv.style.cursor="crosshair";}
   else if(m==="cutwall"){b.style.display="block";b.textContent="✂ Cut wall: click points along the wall to remove (it snaps to room corners and edges; Shift = straight), then press ENTER. A line along a wall removes that stretch from both rooms; a line straight across a room splits it there with no wall between. Backspace = undo last point, Esc cancels.";cv.style.cursor="crosshair";}
-  else if(m==="select"){b.style.display="block";b.textContent="Select (Esc): click an item; Shift/Ctrl+click to add or remove; drag a box on empty space — left→right takes what is wholly inside, right→left anything it touches. Drag a selected item to move them all (Shift = straight), Del deletes, Ctrl+A selects all. Pick a fitting in Fittings to place again.";cv.style.cursor="default";}
+  else if(m==="select"){b.style.display="block";b.textContent="Select (Esc): click an item; Shift+click to add or remove; Ctrl+click a fitting turns it 45° (Ctrl+drag points it, Ctrl+wheel 15°); drag a box on empty space — left→right takes what is wholly inside, right→left anything it touches. Drag a selected item to move them all (Shift = straight), Del deletes, Ctrl+A selects all. Pick a fitting in Fittings to place again.";cv.style.cursor="default";}
   else{b.style.display="none";cv.style.cursor="crosshair";}
   selFitKey="";
   if(m!=="movegrid")refresh();else draw();

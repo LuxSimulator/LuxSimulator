@@ -436,6 +436,11 @@
   .sch-row .q{font-weight:700;font-family:ui-monospace,monospace}
   .sch-row .rm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sch-row .st{font-family:ui-monospace,monospace;font-size:10.5px;opacity:.85;white-space:nowrap}
+  .stdbox{border:1px solid rgba(255,194,71,.55);background:rgba(255,194,71,.08);border-radius:9px;padding:7px 8px;display:flex;flex-direction:column;gap:5px}
+  .stdbox .stdh{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;color:#ffc247}
+  :root[data-theme="light"] .stdbox .stdh{color:#8a5a00}
+  .stdbox .stdrow{display:flex;align-items:flex-start;gap:6px;font-size:11px;line-height:1.35}
+  .stdbox .stdrow span{flex:1}
   @media (prefers-reduced-motion:reduce){#navInk,#railNav button svg,.btn.ico svg{transition:none}}
   @media print{#rail{display:none}}
 </style>
@@ -560,7 +565,7 @@
         <div class="note" id="mfNote"></div>
         <button class="btn sm" id="mfApply" style="width:100%">Use this MF</button>
       </details>
-      <div class="row"><span title="AS/NZS 1680.4 Cl 1.3.11: for a general lighting system the reference surface excludes a 0.5 m strip around the room perimeter.">Exclude 0.5 m perimeter</span><input type="checkbox" id="excl05"></div>
+      <div class="row"><span title="AS/NZS 1680.4 Cl 1.3.11: for a general lighting system the reference surface excludes a 0.5 m strip around the room perimeter.">Exclude 0.5 m perimeter</span><input type="checkbox" id="excl05" checked></div>
       <div class="note">AS/NZS 1680.4 defines the maintained-illuminance reference surface as the working plane EXCLUDING a 0.5 m perimeter strip. AGi32 reports over whatever polygon it was given, so leave this off when cross-checking a designer's figures and on when quoting against the standard.</div>
       <div class="row"><span>Assessment grid (m)</span><input class="num" type="number" id="gridSpacing" value="1.0" min="0.1" max="5" step="0.1"></div>
       <div class="note">Compliance figures (avg / min / U₀) are quoted on a cell-centred grid at this spacing — the convention AGi32/DIALux report on. The heat map still uses the finer calculation grid. Match a reference report's spacing when cross-checking.</div>
@@ -5746,6 +5751,25 @@ function roomSummaryEl(r){
   blk.innerHTML=h;
   return blk;
 }
+// STANDARDS CHECK: settings that contradict the standard for the room types
+// in use, each with a fix. Nothing is changed until the user clicks — a saved
+// project keeps its results until then.
+function standardsIssues(){
+  const out=[];
+  const interior=rooms.filter(r=>!r.open);
+  const ex=$("excl05");
+  if(interior.length&&ex&&!ex.checked)out.push({msg:"0.5 m wall zone is OFF — AS/NZS 1680.4 Cl 1.3.11 excludes it from the assessment of interiors",
+    fix:()=>{ex.checked=true;}});
+  for(const r of rooms){
+    const p=r.roomType!==""&&r.roomType!=null?PRESETS[+r.roomType]:null;
+    if(!p){out.push({msg:(r.name||"Room")+": no room type set — target, uniformity and plane are assumed",fix:null});continue;}
+    const std=p.wp!=null?p.wp:roomVals().workPlane;
+    if(r.wp!=null&&r.wp!==""&&Math.abs(parseFloat(r.wp)-std)>0.005)
+      out.push({msg:(r.name||"Room")+": working plane "+n2(parseFloat(r.wp))+" m — "+p.label.replace(/ — \d+ lx$/,"")+" is assessed at "+n2(std)+" m"+(p.wp!=null?" (AS/NZS 1680.2.1, floor level)":""),
+        fix:()=>{delete r.wp;}});
+  }
+  return out;
+}
 function updateStats(){
   const room=roomVals();
   belowPlaneCheck(room);
@@ -5765,6 +5789,15 @@ function updateStats(){
   // check rests on; otherwise up to three rooms show the short form. ----
   const head=$("statHead");
   head.innerHTML="";
+  {const iss=standardsIssues();if(iss.length){const box=document.createElement("div");box.className="stdbox";
+    const fixable=iss.filter(i=>i.fix);
+    box.innerHTML='<div class="stdh"><b>⚠ Standards check</b></div>';
+    if(fixable.length){const fa=document.createElement("button");fa.className="btn sm";fa.textContent="Fix all";fa.title="Set every listed setting to what the standard calls for";
+      fa.onclick=()=>{withUndo(()=>{for(const i of fixable)i.fix();});roomStatsCache={};renderRooms();refresh();};box.firstChild.appendChild(fa);}
+    for(const i of iss){const row=document.createElement("div");row.className="stdrow";const t=document.createElement("span");t.textContent=i.msg;row.appendChild(t);
+      if(i.fix){const b=document.createElement("button");b.className="btn sm";b.textContent="Fix";b.onclick=()=>{withUndo(()=>i.fix());roomStatsCache={};renderRooms();refresh();};row.appendChild(b);}
+      box.appendChild(row);}
+    head.appendChild(box);}}
   // ROW 1 — every room at once: a chip each, red where it fails and why;
   // click one to select it (it lights up on the plan and fills row 2).
   const row1=document.createElement("div");row1.className="rs-row";
@@ -6290,7 +6323,10 @@ function renderRooms(){
     sel.onclick=e=>e.stopPropagation();
     sel.onchange=e=>{
       r.roomType=e.target.value;
-      if(e.target.value!==""){r.target=PRESETS[+e.target.value].lux;r.open=presetIsOpen(e.target.value);}
+      if(e.target.value!==""){r.target=PRESETS[+e.target.value].lux;r.open=presetIsOpen(e.target.value);
+        // the standard decides these for the type (Gus 25/11/2026): the type's own
+        // reference plane, and the AS/NZS 1680.4 0.5 m wall zone for an interior
+        delete r.wp;if(!r.open&&$("excl05"))$("excl05").checked=true;roomStatsCache={};}
       renderRooms();refresh();
     };
     const tgt=document.createElement("input");

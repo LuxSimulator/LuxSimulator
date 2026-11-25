@@ -6262,8 +6262,11 @@ function renderFurniture(){
     if(f.key===furnType)op.selected=true;
     sel.appendChild(op);
   }
-  sel.onchange=()=>{furnType=sel.value;};
-  pick.appendChild(lab);pick.appendChild(sel);
+  // picking a type IS the intent to draw it: the tool comes on with it (Gus 26/11/2026)
+  sel.onchange=()=>{furnType=sel.value;if(mode!=="furn")setMode("furn");};
+  const go=document.createElement("button");go.className="btn sm";go.textContent=mode==="furn"?"Drawing…":"Draw";
+  go.title="Start drawing this type on the plan (click two corners; a column: one spot)";go.onclick=()=>{furnType=sel.value;setMode("furn");};
+  pick.appendChild(lab);pick.appendChild(sel);pick.appendChild(go);
   list.appendChild(pick);
 
   if(!obstructions.length){
@@ -6875,7 +6878,8 @@ cv.addEventListener("pointercancel",()=>{drag=null;roomDrag=null;gridDrag=null;e
 window.addEventListener("blur",()=>{if(fastPreview)endFastPreview();});
 cv.addEventListener("wheel",e=>{
   e.preventDefault();
-  if((e.ctrlKey||e.metaKey)&&mode==="select"&&selSet.L.size){
+  const onSel=(e.ctrlKey||e.metaKey)&&mode==="select"&&selSet.L.size&&(()=>{const h=hitLight(toRoom(e));return h&&selSet.L.has(h.id);})();
+  if(onSel){
     const st=(e.shiftKey?5:15)*(e.deltaY<0?-1:1);
     withUndo(()=>{for(const lt of lights)if(selSet.L.has(lt.id))lt.rot=(((lt.rot||0)+st)%360+360)%360;});
     refresh();return;}

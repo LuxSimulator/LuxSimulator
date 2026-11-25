@@ -2524,6 +2524,9 @@ function compute(){
   // Built once per compute(). When there is no furniture OBS stays null and
   // every path below is arithmetically identical to the empty-room engine, so
   // the golden baselines cannot move.
+  // COLUMNS are cut out of the room full height: kept equal to the ceiling of
+  // the room they stand in, so a ceiling change carries them with it.
+  for(const o of obstructions)if(o.kind==="column"){const r=roomContaining({x:(o.x0+o.x1)/2,y:(o.y0+o.y1)/2});o.h=+roomCeilOf(r,room.ceilH).toFixed(2);}
   const OBS=obstructions.length?obstructions.map(o=>({
     x0:Math.min(o.x0,o.x1),x1:Math.max(o.x0,o.x1),
     y0:Math.min(o.y0,o.y1),y1:Math.max(o.y0,o.y1),
@@ -4863,6 +4866,7 @@ function draw(){
     const drawFig=(cx,cyy)=>{
       const X=px(cx),Y=py(cyy);
       if(X<M||X>canvasW||Y<M||Y>canvasH)return false;
+      if(obstructions.length&&obstructions.some(o=>o.kind==="column"&&cx>=o.x0-0.05&&cx<=o.x1+0.05&&cyy>=o.y0-0.05&&cyy<=o.y1+0.05))return false;   // a column is cut out
       const v=luxAt(cx,cyy);
         // The halo and the baseline drop were fixed pixel amounts, tuned for a
         // 9 px screen label. At print density the font is several times bigger,
@@ -5237,6 +5241,10 @@ function draw(){
   for(const o of obstructions){
     const x1=px(o.x0),y1=py(o.y0),w=(o.x1-o.x0)*es,h=(o.y1-o.y0)*es;
     const sel=selectedObst===o.id;
+    if(o.kind==="column"){   // structural column: solid, crossed, the CAD symbol
+      ctx.save();ctx.fillStyle=printPlan?"#9a9a9a":"#6e6b66";ctx.fillRect(x1,y1,w,h);
+      ctx.strokeStyle=sel?"#ffb450":(printPlan?"#333":"#1e1d1b");ctx.lineWidth=sel?2:1.2;ctx.strokeRect(x1,y1,w,h);
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1+w,y1+h);ctx.moveTo(x1+w,y1);ctx.lineTo(x1,y1+h);ctx.stroke();ctx.restore();continue;}
     ctx.save();
     if(!printPlan){
       ctx.fillStyle=sel?"rgba(255,180,80,0.20)":"rgba(150,160,180,0.14)";
@@ -6286,7 +6294,8 @@ function renderFurniture(){
       inp.onchange=()=>{const b=snapState();set(parseFloat(inp.value));commitUndo(b);refresh();};
       r.appendChild(sp);r.appendChild(inp);card.appendChild(r);
     };
-    mk("Height (m)",o.h,0.05,15,0.01,v=>{o.h=Math.max(0.05,Math.min(15,v||0.72));});
+    if(o.kind==="column"){const r=document.createElement("div");r.className="note";r.textContent="Height: full room height ("+(+o.h).toFixed(2)+" m, follows the ceiling)";card.appendChild(r);}
+    else mk("Height (m)",o.h,0.05,15,0.01,v=>{o.h=Math.max(0.05,Math.min(15,v||0.72));});
     mk("Reflectance ρ",o.rho,0,0.95,0.05,v=>{o.rho=Math.max(0,Math.min(0.95,v||0));});
     list.appendChild(card);
   }
@@ -6647,12 +6656,14 @@ cv.addEventListener("pointerdown",e=>{
     const x0=Math.min(furnA.x,p.x),x1=Math.max(furnA.x,p.x);
     const y0=Math.min(furnA.y,p.y),y1=Math.max(furnA.y,p.y);
     furnA=null;
-    if(x1-x0<0.1||y1-y0<0.1){draw();return;}
+    let X0=x0,X1=x1,Y0=y0,Y1=y1;
+    if(furnType==="column"&&(x1-x0<0.1||y1-y0<0.1)){const cx=(x0+x1)/2,cy=(y0+y1)/2;X0=cx-0.25;X1=cx+0.25;Y0=cy-0.25;Y1=cy+0.25;}   // click-click on one spot: a 0.5 m column
+    else if(x1-x0<0.1||y1-y0<0.1){draw();return;}
     const pr=FURN_PRESETS.find(f=>f.key===furnType)||FURN_PRESETS[0];
     const before=snapState();
     const o={id:nextObstId++,name:pr.label,kind:pr.key,
-      x0:+x0.toFixed(2),y0:+y0.toFixed(2),x1:+x1.toFixed(2),y1:+y1.toFixed(2),
-      h:pr.h!=null?pr.h:+roomCeilOf(roomContaining({x:(x0+x1)/2,y:(y0+y1)/2}),roomVals().ceilH).toFixed(2),rho:pr.rho};
+      x0:+X0.toFixed(2),y0:+Y0.toFixed(2),x1:+X1.toFixed(2),y1:+Y1.toFixed(2),
+      h:pr.h!=null?pr.h:+roomCeilOf(roomContaining({x:(X0+X1)/2,y:(Y0+Y1)/2}),roomVals().ceilH).toFixed(2),rho:pr.rho};
     obstructions.push(o);selectedObst=o.id;
     commitUndo(before);
     renderFurniture();refresh();
@@ -7654,6 +7665,10 @@ function inRoomMinMax(){
       for(let k=0;k<rooms.length&&!inside;k++){const b=bb[k];
         if(x>=b[0]&&x<=b[2]&&y>=b[1]&&y<=b[3]&&pip({x,y},rooms[k].pts))inside=true;}
       if(!inside)continue;
+      // inside a column / block (not a measurable point), or within a cell of
+      // its face where the plot cell straddles it: not the room's minimum
+      if(obstructions.length){const cw=rv.length/nx,chh=rv.width/ny;
+        if(obstructions.some(o=>x>=o.x0-cw&&x<=o.x1+cw&&y>=o.y0-chh&&y<=o.y1+chh&&(o.kind==="column"||rv.workPlane<o.h)))continue;}
       const i=iy*nx+ix, v=grid[i];
       if(v<mn){mn=v;mi=i;} if(v>mx){mx=v;ma=i;}
     }

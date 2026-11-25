@@ -298,6 +298,7 @@
   .body>aside[data-tab="strip"] > section[data-tab="strip"]:not([hidden]),
   .body>aside[data-tab="rooms"] > section[data-tab="rooms"]:not([hidden]),
   .body>aside[data-tab="furn"] > section[data-tab="furn"]:not([hidden]),
+  .body>aside[data-tab="sched"] > section[data-tab="sched"],
   .body>aside[data-tab="setup"] > section[data-tab="setup"]{display:block}
   .body>aside > section.tab-empty{font-size:12.5px;line-height:1.55;color:var(--dim)}
   .body>aside[data-tab="strip"] > #stripSec[hidden] ~ section.tab-empty[data-tab="strip"]{display:block}
@@ -422,6 +423,19 @@
   .planbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .planbar .actbar{margin-left:auto;display:flex;align-items:center;gap:5px}
   #page{padding-top:10px}
+  /* schedule tab */
+  .sch-type{border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:9px;padding:6px 8px;margin-bottom:8px;background:rgba(255,255,255,.02)}
+  .sch-head{display:flex;align-items:baseline;gap:7px;width:100%;background:none;border:0;color:var(--text);padding:2px 0;cursor:pointer;text-align:left;font-family:inherit}
+  .sch-head b{color:var(--accent);font-size:13px;flex:0 0 auto}
+  .sch-head span{flex:1;min-width:0;font-size:11px;opacity:.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sch-head em{font-style:normal;font-size:11px;font-family:ui-monospace,monospace;flex:0 0 auto}
+  .sch-sub{font-size:10.5px;opacity:.6;margin:1px 0 4px}
+  .sch-row{display:grid;grid-template-columns:44px 1fr auto;gap:6px;width:100%;align-items:center;background:var(--btnBg);border:1px solid var(--line);
+    border-radius:6px;padding:4px 7px;margin-top:3px;color:var(--text);font-size:11.5px;text-align:left;cursor:pointer;font-family:inherit}
+  .sch-row:hover{border-color:var(--accent);filter:none}
+  .sch-row .q{font-weight:700;font-family:ui-monospace,monospace}
+  .sch-row .rm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sch-row .st{font-family:ui-monospace,monospace;font-size:10.5px;opacity:.85;white-space:nowrap}
   @media (prefers-reduced-motion:reduce){#navInk,#railNav button svg,.btn.ico svg{transition:none}}
   @media print{#rail{display:none}}
 </style>
@@ -1782,12 +1796,73 @@ addEventListener("click",e=>{
 addEventListener("keydown",e=>{if(e.key==="Escape")closeSettingsMenu();});
 applySettingsPanels(settingsShown());
 
+// ---------------- Schedule tab: every fitting type, split by how it is used ----
+// One block per type; inside it one line per distinct combination of room,
+// mounting height, aim (tilt is the type's, direction each fitting's) and
+// rotation, with the quantity. Same settings group together, different ones
+// stand apart. Click a line to select exactly those fittings on the plan,
+// a heading to select the whole type (Gus 25/11/2026).
+function schedRoomOf(x,y){const r=roomContaining({x,y});return r?r.name||"Room":"Outside rooms";}
+function renderSchedule(){
+  const host=$("schedList");if(!host)return;
+  host.innerHTML="";
+  const esc=v=>String(v).replace(/</g,"&lt;");
+  const pick=ids=>{if(mode!=="select")setMode("select");selClear();for(const id of ids)selSet.L.add(id);selSync();selFitKey="";draw();renderSelExtras&&renderSelExtras();};
+  let any=false;
+  for(const f of fixtures){
+    if(isStrip(f))continue;
+    const ls=lights.filter(l=>l.fixtureId===f.id);if(!ls.length)continue;any=true;
+    const tilt=+f.tilt||0, groups=new Map();
+    for(const l of ls){
+      const room=schedRoomOf(l.x,l.y), mh=+mhOf(l,f).toFixed(2), rot=Math.round(((l.rot||0)%360+360)%360);
+      const key=room+"|"+mh+"|"+rot;
+      if(!groups.has(key))groups.set(key,{room,mh,rot,own:l.mh!=null,ids:[]});
+      groups.get(key).ids.push(l.id);
+    }
+    const g=[...groups.values()].sort((a,b)=>a.room.localeCompare(b.room)||a.mh-b.mh||a.rot-b.rot);
+    const rooms=new Set(g.map(x=>x.room)).size;
+    const card=document.createElement("div");card.className="sch-type";
+    const h=document.createElement("button");h.type="button";h.className="sch-head";
+    h.innerHTML=`<b>${esc(f.code||"")}</b><span>${esc(String(f.name||"").replace(/^\S+\s*/,""))}</span><em>${ls.length} · ${n2(ls.length*(+f.watts||0))} W</em>`;
+    h.title="Select all "+ls.length+" "+(f.code||"")+" on the plan ("+g.length+" setting"+(g.length>1?"s":"")+" across "+rooms+" room"+(rooms>1?"s":"")+")";
+    h.onclick=()=>pick(ls.map(l=>l.id));
+    card.appendChild(h);
+    const sub=document.createElement("div");sub.className="sch-sub";
+    sub.textContent=(tilt>0?"aim "+tilt+"° tilt (type)":"no tilt")+" · "+g.length+" setting"+(g.length>1?"s":"")+" · "+rooms+" room"+(rooms>1?"s":"");
+    card.appendChild(sub);
+    for(const x of g){
+      const r=document.createElement("button");r.type="button";r.className="sch-row";
+      const dir=tilt>0?"aim → "+x.rot+"°":(x.rot?"rot "+x.rot+"°":"rot 0°");
+      r.innerHTML=`<span class="q">${x.ids.length}×</span><span class="rm">${esc(x.room)}</span><span class="st">${x.mh} m${x.own?"*":""} · ${dir}</span>`;
+      r.title="Select these "+x.ids.length+" on the plan";
+      r.onclick=()=>pick(x.ids);
+      card.appendChild(r);
+    }
+    host.appendChild(card);
+  }
+  // LED strip runs, by type
+  for(const f of fixtures){
+    if(!isStrip(f))continue;const rs=strips.filter(s=>s.fixtureId===f.id);if(!rs.length)continue;any=true;
+    const card=document.createElement("div");card.className="sch-type";
+    const tot=rs.reduce((a,s)=>a+stripLen(s),0);
+    const h=document.createElement("div");h.className="sch-head";
+    h.innerHTML=`<b>${esc(f.code||"")}</b><span>${esc(String(f.name||"").replace(/^\S+\s*/,""))}</span><em>${tot.toFixed(1)} m · ${n2(tot*(+f.watts||0))} W</em>`;
+    card.appendChild(h);
+    for(const s of rs){const p=stripPath(s)[0]||{x:0,y:0},M0=stripMountOf(s);
+      const r=document.createElement("div");r.className="sch-row";
+      r.innerHTML=`<span class="q">${stripLen(s).toFixed(1)} m</span><span class="rm">${esc(schedRoomOf(p.x,p.y))}</span><span class="st">${esc(M0.abbr)} · ${(+s.mh).toFixed(2)} m</span>`;
+      card.appendChild(r);}
+    host.appendChild(card);
+  }
+  if(!any){const d=document.createElement("div");d.className="note";d.textContent="No fittings placed yet.";host.appendChild(d);}
+}
 // ---------------- the rail (League Manager's frame) ----------------
 // Tabs down the left, each showing its own sections of the working panel; the
 // tools sit at the foot. 16px line icons drawn inline: no font, no network, and
 // they take the tab's colour so both themes get them right.
 const RICON={
   fit:'<path d="M8 1.8a4.2 4.2 0 0 0-2.4 7.6c.5.4.8 1 .8 1.6v.6h3.2V11c0-.6.3-1.2.8-1.6A4.2 4.2 0 0 0 8 1.8Z"/><path d="M6.4 13.4h3.2M7 15h2"/>',
+  sched:'<path d="M5.5 3.5h8M5.5 8h8M5.5 12.5h8"/><circle cx="2.6" cy="3.5" r=".9"/><circle cx="2.6" cy="8" r=".9"/><circle cx="2.6" cy="12.5" r=".9"/>',
   strip:'<path d="M1.6 10.6c1.6-4 3.2-4 4.8 0s3.2 4 4.8 0 2.4-3.2 3.2-2.4"/><path d="M2.6 5.4h.01M5.8 4.2h.01M9 5.4h.01M12.2 4.2h.01"/>',
   rooms:'<rect x="2" y="2" width="12" height="12" rx="1.4"/><path d="M8 2v5.4h6M8 10.6V14"/>',
   furn:'<path d="M2.2 7.4h11.6M3.4 7.4V13M12.6 7.4V13M4.6 7.4V4.2h6.8v3.2"/>',
@@ -1797,7 +1872,7 @@ const RICON={
   appshrink:'<rect x="1.9" y="2.6" width="12.2" height="9.2" rx="1.5"/><path d="M4.4 6.8h1.2V5.6M11.6 6.8h-1.2V5.6M11.6 7.6h-1.2v1.2M4.4 7.6h1.2v1.2"/><path d="M6 14h4"/>'
 };
 const ricon=k=>'<svg viewBox="0 0 16 16" aria-hidden="true">'+(RICON[k]||"")+'</svg>';
-const RTABS=[["fit","Fittings"],["strip","LED strips"],["rooms","Rooms"],["furn","Furniture"],["setup","Setup"]];
+const RTABS=[["fit","Fittings"],["strip","LED strips"],["rooms","Rooms"],["furn","Furniture"],["sched","Schedule"],["setup","Setup"]];
 const railAside=document.querySelector(".body>aside");
 (function(){
   // every section of the working panel belongs to one tab
@@ -1809,6 +1884,7 @@ const railAside=document.querySelector(".body>aside");
   const ph=(tab,title,text)=>{const s2=document.createElement("section");s2.className="tab-empty";s2.dataset.tab=tab;
     s2.innerHTML='<div class="sect-t"></div><div></div>';s2.firstChild.textContent=title;s2.lastChild.textContent=text;
     railAside.appendChild(s2);};
+  {const s3=document.createElement("section");s3.id="schedSec";s3.dataset.tab="sched";s3.innerHTML='<div class="sect-t">Fitting schedule — by room and setting</div><div class="note" style="margin-bottom:8px">Every fitting type, split by room, mounting height and aim. Click a line to select those fittings on the plan; click a heading for the whole type. * = own height.</div><div id="schedList"></div>';railAside.appendChild(s3);}
   ph("strip","LED strips","No LED strip type yet. Add one from the Fittings catalogue (EL / L codes), then draw runs on the plan: click points, Shift for 90°, double-click or Enter to finish.");
   ph("furn","Furniture","Pick the Furniture tool on the plan toolbar, then click two corners to draw a desk, screen or rack. Height decides what it shadows.");
   const nav=$("railNav");
@@ -1843,6 +1919,7 @@ function setTab(k){
   $("settingsBtn").classList.toggle("on",k==="setup");
   // (at load the furniture state does not exist yet — init renders it anyway)
   if(k==="furn"&&typeof renderFurniture==="function"){try{renderFurniture();}catch(e){}}
+  if(k==="sched"){try{renderSchedule();}catch(e){}}
   placeNavInk();
   railAside.scrollTop=0;
   try{localStorage.setItem("luxTab",k);}catch(e){}
@@ -5742,6 +5819,7 @@ function updateStats(){
       (hasLpdCheck?`<div class="sub">LPD ${lpd.toFixed(1)} / ${n2(maxLpd)} W/m² ${passLpd?"✓ within J7":"✗ exceeds J7"}</div>`:"");
   }
   updateRoomStats();
+  if(typeof railAside!=="undefined"&&railAside.dataset.tab==="sched")renderSchedule();
   for(const f of fixtures){
     const el=$("fxE0-"+f.id);
     if(el&&isStrip(f)){el.textContent="";continue;}

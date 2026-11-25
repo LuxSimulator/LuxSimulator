@@ -385,6 +385,21 @@
     border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:9px;background:rgba(255,255,255,.03)}
   #rail #statHead .roomsum>div:first-child{grid-column:1/3;max-width:none!important}
   #rail #statHead .roomsum .stat:last-child{grid-column:1/3}
+  /* ── fixed workspace: the window is the frame, nothing scrolls but the panel ── */
+  @media (min-width:861px){
+    html,body{height:100%;overflow:hidden}
+    #shell{height:100vh;min-height:0}
+    #page{height:100vh;display:flex;flex-direction:column;overflow:hidden;padding-bottom:6px}
+    .actionstrip{position:static;flex:0 0 auto;margin-bottom:8px}
+    .body{flex:1 1 auto;min-height:0;flex-wrap:nowrap}
+    .body>aside{position:static;height:100%;max-height:100%}
+    .body>main{display:flex;flex-direction:column;min-height:0;height:100%;min-width:0}
+    .body>main .toolsticky{position:static;flex:0 0 auto}
+    #wrap{flex:1 1 auto;min-height:0;overflow:hidden;position:relative}
+    #wrap canvas{display:block}
+    .body>main .legend{flex:0 0 auto}
+    .body>main .footnote{display:none}
+  }
   @media (prefers-reduced-motion:reduce){#navInk,#railNav button svg,.btn.ico svg{transition:none}}
   @media print{#rail{display:none}}
 </style>
@@ -3079,11 +3094,22 @@ $("legendBar").style.background="linear-gradient(90deg,"+[0,.15,.3,.45,.6,.75,.9
 const M=28;
 let canvasW=600,canvasH=450,scale=1;
 
+// FIXED WORKSPACE (Gus 25/11/2026, "like AutoCAD"): on a desktop the window
+// is the frame — the page never scrolls, the drawing fills the space left and
+// 100% fits the whole plot inside it; zoom (wheel, + / -) and pan move around
+// it. A forced width (the report) and narrow screens keep the old rule: full
+// width, height from the plot's own proportions.
+function fixedWorkspace(){return !printPlan&&window.innerWidth>860&&wrap&&wrap.clientHeight>120;}
 function sizeCanvas(forceW){
   const room=roomVals();
   canvasW=forceW||Math.max(320,wrap.clientWidth);
-  scale=(canvasW-M)/room.length;
-  canvasH=room.width*scale+M;
+  if(!forceW&&fixedWorkspace()){
+    canvasH=Math.max(240,wrap.clientHeight);
+    scale=Math.min((canvasW-M)/room.length,(canvasH-M)/room.width);
+  }else{
+    scale=(canvasW-M)/room.length;
+    canvasH=room.width*scale+M;
+  }
   const dpr=window.devicePixelRatio||1;
   cv.width=canvasW*dpr;cv.height=canvasH*dpr;
   cv.style.width=canvasW+"px";cv.style.height=canvasH+"px";
@@ -9557,6 +9583,7 @@ presetSel.addEventListener("change",()=>{
   refresh();
 });
 window.addEventListener("resize",refresh);
+if(window.ResizeObserver){let rq=0;new ResizeObserver(()=>{if(rq)return;rq=requestAnimationFrame(()=>{rq=0;if(typeof fixedWorkspace==="function"&&fixedWorkspace()){const h=wrap.clientHeight,w=wrap.clientWidth;if(Math.abs(h-canvasH)>1||Math.abs(w-canvasW)>1){sizeCanvas();clampView();draw();}}});}).observe(wrap);}
 
 // ---------------- start gate: project details are mandatory ----------------
 function gateCheck(){

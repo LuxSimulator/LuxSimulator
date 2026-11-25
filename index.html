@@ -400,6 +400,12 @@
     .body>main .legend{flex:0 0 auto}
     .body>main .footnote{display:none}
   }
+  /* file actions ride on the plan's readout line (Gus 25/11/2026); the top
+     strip above the page is gone, so the panel and the drawing start at the top */
+  .actionstrip{display:none!important}
+  .planbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .planbar .actbar{margin-left:auto;display:flex;align-items:center;gap:5px}
+  #page{padding-top:10px}
   @media (prefers-reduced-motion:reduce){#navInk,#railNav button svg,.btn.ico svg{transition:none}}
   @media print{#rail{display:none}}
 </style>
@@ -439,20 +445,7 @@
      live read-only label — visible from anywhere, edited in Settings. -->
 <div class="actionstrip">
   
-  <div class="actbar">
-    <!-- These four keep their WORDS, per Gus: two document glyphs side by side
-         do not say which one is the spreadsheet and which the report. The icons
-         are now deliberately unalike - a grid for CSV, a red book for PDF - and
-         the label carries the meaning either way. Settings and theme stay
-         icon-only because there is exactly one of each. -->
-    <button class="btn sm" id="exportCsv" title="Setting-out coordinates and per-room figures, as a spreadsheet">▦ Export CSV</button>
-    <button class="btn sm" id="exportPdf" title="Full illuminance design check as a PDF">📕 Export PDF</button>
-    <button class="btn sm" id="exportDxf" title="Layout as DXF for the drawing set — fittings as blocks, rooms, lux grid, on separate layers">📐 Export DXF</button>
-    <span class="sep"></span>
-    <button class="btn sm" id="saveModel" title="Save the whole design as a .luxmodel you can reopen">💾 Save model</button>
-    <button class="btn sm" id="loadModel" title="Open a saved .luxmodel">📂 Open model</button>
-    
-  </div>
+  
 </div>
 
 <div id="gate" style="position:fixed;inset:0;background:var(--gateBg);z-index:999;display:flex;align-items:center;justify-content:center">
@@ -634,6 +627,20 @@
          The readout stays - it is live state, not instruction. -->
     <div class="planbar">
       <span class="readout" id="readout"></span>
+      <div class="actbar">
+    <!-- These four keep their WORDS, per Gus: two document glyphs side by side
+         do not say which one is the spreadsheet and which the report. The icons
+         are now deliberately unalike - a grid for CSV, a red book for PDF - and
+         the label carries the meaning either way. Settings and theme stay
+         icon-only because there is exactly one of each. -->
+    <button class="btn sm" id="exportCsv" title="Setting-out coordinates and per-room figures, as a spreadsheet">▦ Export CSV</button>
+    <button class="btn sm" id="exportPdf" title="Full illuminance design check as a PDF">📕 Export PDF</button>
+    <button class="btn sm" id="exportDxf" title="Layout as DXF for the drawing set — fittings as blocks, rooms, lux grid, on separate layers">📐 Export DXF</button>
+    <span class="sep"></span>
+    <button class="btn sm" id="saveModel" title="Save the whole design as a .luxmodel you can reopen">💾 Save model</button>
+    <button class="btn sm" id="loadModel" title="Open a saved .luxmodel">📂 Open model</button>
+    
+  </div>
     </div>
     <!-- TOOLBAR ORDER, per Gus. The scale pill leads: every number the tool
          produces is wrong if the drawing is not calibrated, so the state of that

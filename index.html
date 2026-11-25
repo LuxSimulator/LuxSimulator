@@ -367,6 +367,24 @@
   .rchip.bad em{color:var(--bad)}
   .rchip.sel{box-shadow:0 0 0 2px var(--accent)}
   .rchip:hover{filter:none;border-color:var(--accent)}
+  /* ── room compliance on the rail ── */
+  #railNav{flex:0 0 auto!important}
+  #rail #statHead{flex:1 1 0;min-height:0;overflow-y:auto!important;overflow-x:hidden!important;display:flex;flex-direction:column;
+    align-items:stretch;gap:8px;padding:8px 2px 4px;border-top:1px solid var(--line);scrollbar-width:thin}
+  #rail #statHead .rs-row{flex-direction:column;align-items:stretch;gap:6px}
+  #rail #statHead .rchips{flex-direction:column;overflow:visible;padding:0}
+  #rail .rchip{display:grid;grid-template-columns:10px 1fr auto;grid-template-rows:auto auto;column-gap:6px;row-gap:1px;
+    width:100%;white-space:normal;text-align:left;padding:6px 8px}
+  #rail .rchip i{grid-row:1/3;align-self:center}
+  #rail .rchip b{max-width:none;font-size:12px;line-height:1.25}
+  #rail .rchip em{grid-column:3;grid-row:1;font-size:11.5px;white-space:nowrap}
+  #rail .rchip span{grid-column:2/4;grid-row:2;font-size:10.5px;white-space:nowrap}
+  #rail #statHead .stat{text-align:left}
+  #rail #statHead .stat .v{font-size:13px}
+  #rail #statHead .roomsum{display:grid!important;grid-template-columns:1fr 1fr;gap:6px 10px;padding:8px 9px!important;
+    border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:9px;background:rgba(255,255,255,.03)}
+  #rail #statHead .roomsum>div:first-child{grid-column:1/3;max-width:none!important}
+  #rail #statHead .roomsum .stat:last-child{grid-column:1/3}
   @media (prefers-reduced-motion:reduce){#navInk,#railNav button svg,.btn.ico svg{transition:none}}
   @media print{#rail{display:none}}
 </style>
@@ -384,6 +402,8 @@
     <span class="lab">Project</span><span class="pn" id="railProj">No project yet</span><span class="pa" id="railArea"></span>
   </button>
   <nav id="railNav"><i id="navInk"></i></nav>
+  <!-- room compliance, every room: lives on the rail (Gus 25/11/2026) -->
+  <div class="stats railsum" id="statHead"></div>
   <div class="toolbar">
     <div class="toolrow">
       <button class="btn ico" id="btnAppFull" type="button" title="Full screen — hide the browser and leave only the app"></button>
@@ -403,7 +423,7 @@
      so it pins at a predictable ~46 px. Project and area ride on the left as a
      live read-only label — visible from anywhere, edited in Settings. -->
 <div class="actionstrip">
-  <div class="stats" id="statHead"></div>
+  
   <div class="actbar">
     <!-- These four keep their WORDS, per Gus: two document glyphs side by side
          do not say which one is the spreadsheet and which the report. The icons

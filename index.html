@@ -1018,6 +1018,15 @@ function faceIntoRoom(lt,f){
       const t=Math.max(0,Math.min(1,((lt.x-a.x)*ex+(lt.y-a.y)*ey)/L2));
       const cx=a.x+ex*t,cy=a.y+ey*t,d=Math.hypot(lt.x-cx,lt.y-cy);
       if(!best||d<best.d)best={d,ex,ey,cx,cy,r};}}
+  // A column face closer than any room wall: the light faces straight out of
+  // that face (Gus 26/11/2026 - wall lights fixed to columns).
+  for(const o of obstructions){if(o.kind!=="column")continue;
+    const x0=Math.min(o.x0,o.x1),x1=Math.max(o.x0,o.x1),y0=Math.min(o.y0,o.y1),y1=Math.max(o.y0,o.y1);
+    const cx=Math.max(x0,Math.min(x1,lt.x)),cy=Math.max(y0,Math.min(y1,lt.y)),d=Math.hypot(lt.x-cx,lt.y-cy);
+    if(d>0.3||(best&&d>=best.d))continue;
+    const fc=[[lt.x-x0,180],[x1-lt.x,0],[lt.y-y0,270],[y1-lt.y,90]].sort((a,b)=>a[0]-b[0])[0];
+    const out=(lt.x<x0)?180:(lt.x>x1)?0:(lt.y<y0)?270:(lt.y>y1)?90:fc[1];
+    lt.rot=+((((out-wallThrow(f))%360)+360)%360).toFixed(1);return;}
   if(!best||best.d>2)return;
   const L=Math.hypot(best.ex,best.ey);let nx=-best.ey/L,ny=best.ex/L;
   if(!pip({x:best.cx+nx*0.05,y:best.cy+ny*0.05},best.r.pts)){nx=-nx;ny=-ny;}
@@ -2532,6 +2541,21 @@ function compute(){
     y0:Math.min(o.y0,o.y1),y1:Math.max(o.y0,o.y1),
     h:Math.max(0.01,+o.h||0.72), rho:Math.max(0,Math.min(0.95,+o.rho||0.3)),
   })):null;
+  // A FITTING ON A COLUMN (or any block taller than its mount): a wall light
+  // fixed to a column face sat exactly on the block's surface, so the shadow
+  // test found every ray inside it and the light gave 0 lx in every direction
+  // (Gus 26/11/2026). Its light point is put 60 mm off the nearest face - about
+  // a wall light's body - so it lights the room and shadows only what the
+  // column really hides behind it.
+  if(OBS)for(const s of srcs){
+    if(s.strip)continue;
+    for(const o of OBS){
+      if(!(s.mh<o.h)||s.x<o.x0-0.03||s.x>o.x1+0.03||s.y<o.y0-0.03||s.y>o.y1+0.03)continue;
+      const d=[[s.x-o.x0,-1,0],[o.x1-s.x,1,0],[s.y-o.y0,0,-1],[o.y1-s.y,0,1]].sort((a,b)=>a[0]-b[0])[0];
+      if(d[1]<0)s.x=o.x0-0.06;else if(d[1]>0)s.x=o.x1+0.06;else if(d[2]<0)s.y=o.y0-0.06;else s.y=o.y1+0.06;
+      break;
+    }
+  }
   // Cells whose assessment point lies INSIDE a block are not measurable
   // positions. They are kept out of the statistics and out of the cavity sums
   // rather than being reported as dark floor.
@@ -8697,7 +8721,8 @@ function rptWrap(g,txt,maxW){
 function rptHeader(g,full,meta){
   const{W,MG,CW,F,font}=RPT;
   let y=MG;
-  const logo=document.querySelector('header img[alt="AED Project Services"]');
+  // the AED logo now lives on the rail (header removed 25/11/2026), same image
+  const logo=document.querySelector('img[alt="AED Project Services"]');
   // One logo size on every sheet: the masthead and the condensed strip used to
   // draw it at different heights, so it shrank page to page.
   const LOGO_H=F(34);

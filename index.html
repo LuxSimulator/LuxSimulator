@@ -6250,7 +6250,7 @@ function renderFurniture(){
   const sel=document.createElement("select");sel.className="num";sel.style.width="150px";
   for(const f of FURN_PRESETS){
     const op=document.createElement("option");op.value=f.key;
-    op.textContent=f.label+"  "+f.h.toFixed(2)+" m";
+    op.textContent=f.label+(f.h!=null?"  "+f.h.toFixed(2)+" m":"");
     if(f.key===furnType)op.selected=true;
     sel.appendChild(op);
   }
@@ -6286,7 +6286,7 @@ function renderFurniture(){
       inp.onchange=()=>{const b=snapState();set(parseFloat(inp.value));commitUndo(b);refresh();};
       r.appendChild(sp);r.appendChild(inp);card.appendChild(r);
     };
-    mk("Height (m)",o.h,0.05,6,0.01,v=>{o.h=Math.max(0.05,Math.min(6,v||0.72));});
+    mk("Height (m)",o.h,0.05,15,0.01,v=>{o.h=Math.max(0.05,Math.min(15,v||0.72));});
     mk("Reflectance ρ",o.rho,0,0.95,0.05,v=>{o.rho=Math.max(0,Math.min(0.95,v||0));});
     list.appendChild(card);
   }
@@ -6652,7 +6652,7 @@ cv.addEventListener("pointerdown",e=>{
     const before=snapState();
     const o={id:nextObstId++,name:pr.label,kind:pr.key,
       x0:+x0.toFixed(2),y0:+y0.toFixed(2),x1:+x1.toFixed(2),y1:+y1.toFixed(2),
-      h:pr.h,rho:pr.rho};
+      h:pr.h!=null?pr.h:+roomCeilOf(roomContaining({x:(x0+x1)/2,y:(y0+y1)/2}),roomVals().ceilH).toFixed(2),rho:pr.rho};
     obstructions.push(o);selectedObst=o.id;
     commitUndo(before);
     renderFurniture();refresh();
@@ -7360,6 +7360,10 @@ const FURN_PRESETS=[
   {key:"screen", label:"Screen / partition",h:1.40, rho:0.30},
   {key:"rack",   label:"Racking / shelving",h:2.40, rho:0.20},
   {key:"joinery",label:"Joinery / cabinet", h:0.90, rho:0.35},
+  // a structural column: floor to the ceiling of the room it stands in (set
+  // when drawn), painted finish. It shadows like any block and its faces
+  // take part in the bounce at their reflectance (Gus 26/11/2026).
+  {key:"column", label:"Column (floor to ceiling)", h:null, rho:0.50},
 ];
 const ROOM_COLORS=["#5ee88a","#4da3ff","#ff8f6b","#e39dff","#ffd24d","#7dd4ff","#ff6b9d","#9dff8f"];
 let nextRoomId=1;
@@ -8257,6 +8261,18 @@ function drawScene3D(g,X,Y,BW,BH,scene){
       markers.push({lt,f,z,isB:isBatten(f),isPole:isPole(f)&&!pw,isWall:isWall(f),isPW:pw,isEx:!!f&&f.shape==="exit"});
     }
     labels.push({r,bx0,by0,bx1,by1});
+  }
+  // FURNITURE AND COLUMNS as solid blocks (they shadow and reflect in the
+  // calculation; until 26/11/2026 the 3D view drew only their dark footprint).
+  // Heights are from the plane the view stands on; the part above it is drawn.
+  for(const o of obstructions){
+    const zt=Math.min(wallH,(+o.h||0.72)-room.workPlane);if(!(zt>0.01))continue;
+    const ox0=Math.min(o.x0,o.x1),ox1=Math.max(o.x0,o.x1),oy0=Math.min(o.y0,o.y1),oy1=Math.max(o.y0,o.y1);
+    const side="#b9b5ae",top="#d8d4cc",edge="#5a5650";
+    const box=(q,d,fill)=>faces.push({d,wall:0,q,fill,edge});
+    box([P(ox0,oy1,0),P(ox1,oy1,0),P(ox1,oy1,zt),P(ox0,oy1,zt)],ox0/2+ox1/2+oy1+0.001,side);   // +y face
+    box([P(ox1,oy0,0),P(ox1,oy1,0),P(ox1,oy1,zt),P(ox1,oy0,zt)],ox1+oy0/2+oy1/2+0.001,side);   // +x face
+    box([P(ox0,oy0,zt),P(ox1,oy0,zt),P(ox1,oy1,zt),P(ox0,oy1,zt)],ox1+oy1+0.002,top);          // top
   }
   // Far surfaces first. At equal depth a wall goes down before the floor cell that
   // meets it, so the join reads cleanly instead of the floor nibbling the skirting.

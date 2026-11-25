@@ -1956,7 +1956,10 @@ function cutEdgeIv(a,b,c){
   const tol=c.tol||0.45;
   if(Math.abs((c.a.x-a.x)*uy-(c.a.y-a.y)*ux)>tol||Math.abs((c.b.x-a.x)*uy-(c.b.y-a.y)*ux)>tol)return null;
   const ta=(c.a.x-a.x)*ux+(c.a.y-a.y)*uy, tb=(c.b.x-a.x)*ux+(c.b.y-a.y)*uy;
-  const t0=Math.max(0,Math.min(ta,tb)), t1=Math.min(L,Math.max(ta,tb));
+  let t0=Math.max(0,Math.min(ta,tb)), t1=Math.min(L,Math.max(ta,tb));
+  // a cut that stops just short of a corner is meant to reach it: no stub of
+  // wall a few cm long left standing (it drew as a sliver in 3D)
+  if(t0<0.15)t0=0;if(L-t1<0.15)t1=L;
   return t1-t0>0.05?[t0,t1]:null;
 }
 function cutIvOf(r,c){return r.pts.map((a,i)=>{const v=cutEdgeIv(a,r.pts[(i+1)%r.pts.length],c);return v?[v]:[];});}
@@ -1973,15 +1976,28 @@ function roomOpenIv(r,base){
   const out=r.pts.map(()=>[]);
   if(r.open)return out;
   const ceil=q=>base==null?Infinity:roomCeilOf(q,base);
+  // FULL-HEIGHT by default (Gus 25/11/2026: a removed wall must leave nothing
+  // behind, in the 3D view or the calculation). A bulkhead — the step down to
+  // the lower ceiling — only where the opening is ticked "Bulkhead" (c.bulk).
   for(const id of roomLinkedIds(r)){
     const B=rooms.find(q=>q.id===id);if(!B||B.open)continue;
-    const z=Math.min(ceil(r),ceil(B));
-    roomSharedIv(r,B).forEach((a,i)=>{for(const v of a)out[i].push([v[0],v[1],z]);});
+    roomSharedIv(r,B).forEach((a,i)=>{for(const v of a)out[i].push([v[0],v[1],Infinity]);});
   }
   for(const c of r.cuts||[]){
-    let z=ceil(r);
-    for(const q of rooms)if(q!==r&&!q.open&&q.cuts&&q.cuts.some(k=>k.cid===c.cid))z=Math.min(z,ceil(q));
+    let z=Infinity;
+    if(c.bulk){z=ceil(r);
+      for(const q of rooms)if(q!==r&&!q.open&&q.cuts&&q.cuts.some(k=>k.cid===c.cid))z=Math.min(z,ceil(q));}
     cutIvOf(r,c).forEach((a,i)=>{for(const v of a)out[i].push([v[0],v[1],z]);});
+  }
+  // A traced outline jogs a few cm at the corners of an opening (Aura Hall/
+  // Corridor: 1-3 cm edges either side of every cut). Those stubs are not wall:
+  // an edge under 0.2 m touching an opening at either end opens with it.
+  const n=r.pts.length, Ls=r.pts.map((a,i)=>{const b=r.pts[(i+1)%n];return Math.hypot(b.x-a.x,b.y-a.y);});
+  const endOpen=i=>out[i].find(v=>v[1]>=Ls[i]-0.02), startOpen=i=>out[i].find(v=>v[0]<=0.02);
+  for(let i=0;i<n;i++){
+    if(out[i].length||Ls[i]>=0.2||Ls[i]<1e-9)continue;
+    const p=endOpen((i-1+n)%n), q=startOpen((i+1)%n);
+    if(p||q)out[i].push([0,Ls[i],Math.min(p?p[2]:Infinity,q?q[2]:Infinity)]);
   }
   return out;
 }
@@ -6190,10 +6206,17 @@ function renderRooms(){
       const w=document.createElement("div");w.style.cssText="display:flex;align-items:center;gap:5px;width:100%";
       const t=document.createElement("span");t.style.flex="1";
       t.textContent="✂ Opening "+len.toFixed(2)+" m → "+(other.length?other.join(", "):"outside");
-      t.title="A stretch of wall removed with ✂ Cut wall. Light passes through it (under the lower ceiling); it is not wall in the reflected-light model.";
+      t.title="A stretch of wall removed with ✂ Cut wall. Fully open, floor to ceiling, unless 'Bulkhead' is ticked.";
+      // bulkhead: the step down to the lower of the two ceilings is still there
+      const bk=document.createElement("input");bk.type="checkbox";bk.checked=!!c.bulk;bk.style.margin="0";
+      bk.title="Tick if a bulkhead drops to the LOWER ceiling over this opening: it is drawn in 3D, blocks light above it and counts as wall. Unticked = open full height.";
+      bk.onclick=e=>e.stopPropagation();
+      bk.onchange=e=>{withUndo(()=>{for(const q of rooms)for(const k of q.cuts||[])if(k.cid===c.cid){if(e.target.checked)k.bulk=true;else delete k.bulk;}});renderRooms();refresh();};
+      const bl=document.createElement("span");bl.textContent="Bulkhead";bl.title=bk.title;bl.style.opacity=".8";
+      w.appendChild(bk);w.appendChild(bl);
       const xb=document.createElement("button");xb.className="xbtn";xb.textContent="✕";xb.title="Put this wall back";
       xb.onclick=e=>{e.stopPropagation();withUndo(()=>removeWallCut(c.cid));renderRooms();refresh();};
-      w.appendChild(t);w.appendChild(xb);row2d.appendChild(w);
+      w.prepend(t);w.appendChild(xb);row2d.appendChild(w);
     }
     // row 3: live per-room stats
     const stat=document.createElement("div");

@@ -317,6 +317,14 @@
     text-transform:uppercase;text-align:center}
   #gate .gate-title span{display:block}
   #gate>div>div:first-child{flex-direction:column-reverse!important;align-items:center!important;gap:12px!important}
+  /* one centre line for the card, the logo and the wordmark: the logo's old
+     corner margin (10 left / -8 right) pushed it 9 px right, and letter-spacing
+     trails the last letter, so each line is indented by its own spacing */
+  #gate>div>div:first-child{width:100%}
+  #gate>div>div:first-child>span{margin:0!important;align-self:center}
+  #gate .gate-title{width:100%}
+  #gate .gate-title .lg{text-indent:3.4px}
+  #gate .gate-title .mg{text-indent:1.6px}
   #gate .gate-title .lg{color:var(--accent);text-shadow:0 0 14px rgba(232,50,43,.55)}
   #gate .gate-title .mg{color:var(--dim);font-weight:400;font-size:11px;letter-spacing:1.6px}
 

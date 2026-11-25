@@ -5779,6 +5779,15 @@ function standardsIssues(){
     fix:()=>{ex.checked=true;}});
   for(const r of rooms){
     const p=r.roomType!==""&&r.roomType!=null?PRESETS[+r.roomType]:null;
+    // fittings or strips mounted ABOVE the room's ceiling: the direct light is
+    // worked from where they hang, the reflected light from a ceiling below
+    // them - an impossible room (Aura Tree Design corridor: S4s and L1 at
+    // 4.3 m under a 3.0 m ceiling). Fix: the ceiling goes to the highest mount.
+    if(!r.open){const ch=roomCeilOf(r,roomVals().ceilH);let hi=0,n=0;
+      for(const l of lights){if(!pip({x:l.x,y:l.y},r.pts))continue;const f=fixtures.find(x=>x.id===l.fixtureId);if(!f)continue;const m=mhOf(l,f);if(m>ch+0.01){n++;hi=Math.max(hi,m);}}
+      for(const st of strips){const q=stripPath(st)[0];if(!q||!pip(q,r.pts))continue;if(+st.mh>ch+0.01){n++;hi=Math.max(hi,+st.mh);}}
+      if(n)out.push({msg:(r.name||"Room")+": "+n+" fitting"+(n>1?"s / runs are":" / run is")+" mounted above the "+n2(ch)+" m ceiling (up to "+n2(hi)+" m) — set the room's real ceiling height",
+        fix:()=>{r.ceilH=+(Math.ceil(hi*10-1e-6)/10).toFixed(1);}});}
     if(!p){out.push({msg:(r.name||"Room")+": no room type set — target, uniformity and plane are assumed",fix:null});continue;}
     const std=p.wp!=null?p.wp:roomVals().workPlane;
     if(r.wp!=null&&r.wp!==""&&Math.abs(parseFloat(r.wp)-std)>0.005)

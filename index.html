@@ -338,6 +338,21 @@
     #railNav button.on{box-shadow:inset 0 -3px 0 var(--accent)}
     #rail .toolbar{flex-direction:row;border-top:0;padding-top:0}
   }
+  /* the pinned top: room compliance on the left, file actions on the right */
+  .actionstrip{flex-wrap:wrap;row-gap:8px}
+  #statHead{flex:1 1 100%;order:0;display:flex;align-items:center;gap:18px;flex-wrap:nowrap;min-width:0;overflow-x:auto;scrollbar-width:thin}
+  .actionstrip .actbar{order:1;margin-left:auto}
+  #statHead .roomsum{flex-wrap:nowrap!important;flex:0 0 auto}
+  #statHead .stat{text-align:left}
+  #statHead .stat .v{font-size:14.5px;white-space:nowrap}
+  #statHead .stat .l{font-size:9.5px;letter-spacing:1px}
+  /* selected fitting: its spec and how it is used, above its controls */
+  .fitsum{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:2px 0 8px;margin-bottom:8px;
+    border-bottom:1px solid var(--line)}
+  .fitsum-name{flex:1 1 100%;font-weight:700;font-size:13px;color:var(--accent)}
+  .fitsum .stat{text-align:left}
+  .fitsum .stat .l{font-size:9.5px;letter-spacing:1px;opacity:.6}
+  .fitsum .stat .v{font-size:13px;font-weight:600;font-family:inherit;white-space:nowrap}
   @media (prefers-reduced-motion:reduce){#navInk,#railNav button svg,.btn.ico svg{transition:none}}
   @media print{#rail{display:none}}
 </style>
@@ -4094,7 +4109,7 @@ function drawSelOverlay(){
 // SELECTED FITTING panel: its own mounting height. Blank = the type height (the
 // bulk value set in the Fittings panel). Rebuilt only when what it shows changes,
 // so typing in the box is never interrupted by a repaint.
-let selFitKey="";
+let selFitKey="", selFocusRoomId=undefined;
 function renderSelFit(){
   const el=$("selFitPanel");if(!el)return;
   // several fittings picked with the arrow: one height for all of them
@@ -4123,12 +4138,38 @@ function renderSelFit(){
   }
   const lt=selected!=null?lights.find(l=>l.id===selected):null;
   const f=lt&&fixtures.find(x=>x.id===lt.fixtureId);
-  const key=lt&&f?[lt.id,lt.mh,f.id,f.mountH,f.code,lights.length,lt.rot,f.tilt].join("|"):"";
+  // the top bar follows the selection to the room it sits in
+  {const fr=focusRoom(),fid=fr?fr.id:null;if(fid!==selFocusRoomId){selFocusRoomId=fid;updateStats();}}
+  const key=lt&&f?[lt.id,lt.mh,lt.x,lt.y,f.id,f.mountH,f.code,f.watts,f.lumens,f.beam,f.cct,f.photoMode,f.iesId,lights.length,lt.rot,f.tilt].join("|"):"";
   if(key===selFitKey)return;selFitKey=key;
   if(!key){el.style.display="none";el.innerHTML="";return;}
   const th=+f.mountH||2.7, own=lights.filter(l=>l.fixtureId===f.id&&l.mh!=null).length;
   el.style.display="block";
   el.innerHTML="";
+  // SPEC SUMMARY: everything about this fitting and how it is used, at a glance
+  {
+    const ies=f.iesId&&typeof IES_LIB!=="undefined"&&IES_LIB[f.iesId];
+    const pm=ies?(f.photoMode==="param"?"Parametric (IES "+f.iesId+" not used)":f.photoMode==="scale"?"IES "+f.iesId+" scaled to lumens":"IES "+f.iesId+" as tested"):"Parametric — no IES file";
+    const lm=ies&&f.photoMode!=="param"&&f.photoMode!=="scale"?(ies.computedFlux||f.lumens):f.lumens;
+    const rm=roomContaining({x:lt.x,y:lt.y});
+    const same=lights.filter(l=>l.fixtureId===f.id), inRoom=rm?same.filter(l=>pip({x:l.x,y:l.y},rm.pts)).length:0;
+    const mh=mhOf(lt,f), tilt=+f.tilt||0;
+    const cells=[
+      ["TYPE",(f.code||"")+" · "+(f.shape||"downlight")],
+      ["POWER",n2(+f.watts||0)+" W"],["OUTPUT",Math.round(lm)+" lm"],["EFFICACY",(+f.watts>0?Math.round(lm/f.watts):"—")+" lm/W"],
+      ["BEAM",(+f.beam||0)+"°"],["CCT",(+f.cct||0)+" K"],
+      ["MOUNTED",n2(mh)+" m"+(lt.mh!=null?" (own)":"")],
+      ["AIM",tilt>0?tilt+"° tilt → "+Math.round(lt.rot||0)+"°":"straight down"],
+      ["PHOTOMETRY",pm],
+      ["ROOM",rm?rm.name:"not in a room"],
+      ["THIS TYPE",same.length+" placed"+(rm?" · "+inRoom+" in "+rm.name:"")+" · "+n2(same.length*(+f.watts||0))+" W"],
+      ["LUX BELOW",Math.round(luxAt(lt.x,lt.y))+" lx"],
+      ["AT",lt.x.toFixed(2)+", "+lt.y.toFixed(2)+" m"]];
+    const sum=document.createElement("div");sum.className="fitsum";
+    sum.innerHTML=`<div class="fitsum-name">${(f.name||f.code||"Fitting").replace(/</g,"&lt;")}</div>`+
+      cells.map(([k,v])=>`<div class="stat"><div class="l">${k}</div><div class="v">${String(v).replace(/</g,"&lt;")}</div></div>`).join("");
+    el.appendChild(sum);
+  }
   const t=document.createElement("span");
   t.textContent="Selected "+(f.code||f.name)+" — mounting height of THIS fitting: ";
   const inp=document.createElement("input");
@@ -5205,6 +5246,41 @@ function belowPlaneCheck(room){
   el.appendChild(btn);
   el.style.display="block";
 }
+// The room the top bar describes in full: the selected room, else the room
+// holding the selected fitting, else the only room.
+function focusRoom(){
+  let id=selectedRoom;
+  if(id==null&&typeof selSet!=="undefined"&&selSet.R.size===1)id=[...selSet.R][0];
+  let r=id!=null?rooms.find(q=>q.id===id):null;
+  if(!r&&selected!=null){const lt=lights.find(l=>l.id===selected);if(lt)r=roomContaining({x:lt.x,y:lt.y});}
+  if(!r&&rooms.length===1)r=rooms[0];
+  return r||null;
+}
+// Every figure the AS/NZS 1680 compliance of one room rests on, in one row.
+function roomSummaryEl(r){
+  const rl=roomAvgLux(r), tg=roomTarget(r), vd=roomVerdict(r,rl,tg), ut=u0Target(r), uc=u0Check(r,rl);
+  const p=r.roomType!==""&&r.roomType!=null?PRESETS[+r.roomType]:null;
+  const st=(l,v,col,tip)=>`<div class="stat"${tip?` title="${String(tip).replace(/"/g,"&quot;")}"`:""}><div class="l">${l}</div><div class="v"${col?` style="color:${col}"`:""}>${v}</div></div>`;
+  const ok=b=>b==null?"":b?"var(--ok)":"var(--bad)";
+  const blk=document.createElement("div");blk.className="roomsum";
+  blk.style.cssText="display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:0 8px;border-left:3px solid "+(r.color||"#5ee88a");
+  const typ=p?p.label.replace(/ — \d+ lx$/,""):"No room type set";
+  const ref=typeof targetRef==="function"?targetRef(r):"";
+  let h=`<div style="max-width:170px;line-height:1.25"><div style="font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}</div>`+
+    `<div style="font-size:10.5px;opacity:.65;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${String(ref).replace(/"/g,"&quot;")}">${typ}</div></div>`;
+  h+=st("E AVG",`${Math.round(rl.avg)} / ${tg} lx`,ok(vd.okL),"Maintained average illuminance achieved / required — "+ref);
+  h+=st("E MIN",`${Math.round(rl.min)} lx`);
+  h+=st("E MAX",`${Math.round(rl.max)} lx`);
+  if(ut&&ut.u0!=null)h+=st("U₀ MIN/AVG",`${rl.u0.toFixed(2)} / ${ut.u0.toFixed(2)}`,ok(vd.okU),"Achieved / required, AS/NZS 1680.1 Table 3.2 "+ut.cls);
+  else h+=st("UNIFORMITY",uc.ok==null?"n/a":uc.ok?"met":"not met",ok(uc.ok),uc.txt);
+  h+=st("E MIN/MAX",rl.max>0?(rl.min/rl.max).toFixed(2):"—",null,"Diversity — for information; compliance uses U₀ = Emin/Eavg");
+  h+=st("PLANE",`${n2(roomWp(r))} m`,null,"Work plane the room is assessed on");
+  h+=st("MF",n2(roomVals().mf),null,"Maintenance factor (AS/NZS 1680.4)");
+  h+=st("AREA",`${polyArea(r.pts).toFixed(1)} m²`);
+  h+=st("RESULT",vd.pass==null?"—":vd.pass?"COMPLIES":"FAILS ("+vd.why+")",ok(vd.pass));
+  blk.innerHTML=h;
+  return blk;
+}
 function updateStats(){
   const room=roomVals();
   belowPlaneCheck(room);
@@ -5219,10 +5295,21 @@ function updateStats(){
   const hasLpdCheck=jc.ok&&jc.cap!=null;
   const passLpd=!hasLpdCheck||jc.pass;
 
-  // ---- top header: per-room stats. Hidden if no rooms or more than 3 (too cluttered) ----
+  // ---- top header: ROOM COMPLIANCE, pinned. The room in focus (selected, or
+  // the one holding the selected fitting) shows every figure the AS/NZS 1680
+  // check rests on; otherwise up to three rooms show the short form. ----
   const head=$("statHead");
   head.innerHTML="";
-  if(rooms.length>=1&&rooms.length<=3){
+  const focus=focusRoom();
+  if(rooms.length>1){
+    const ok=rooms.filter(r=>roomVerdict(r,roomAvgLux(r),roomTarget(r)).pass).length;
+    const c=document.createElement("div");c.className="stat";
+    c.innerHTML=`<div class="l">ROOMS</div><div class="v" style="color:${ok===rooms.length?"var(--ok)":"var(--bad)"}">${ok}/${rooms.length} comply</div>`;
+    head.appendChild(c);
+  }
+  if(focus){
+    head.appendChild(roomSummaryEl(focus));
+  }else if(rooms.length>=1&&rooms.length<=3){
     for(const r of rooms){
       const rl=roomAvgLux(r), tg=roomTarget(r);
       const vd=roomVerdict(r,rl,tg), pass=vd.pass, passL=vd.okL;
@@ -5242,7 +5329,7 @@ function updateStats(){
   }else if(rooms.length>3){
     const d=document.createElement("div");
     d.style.cssText="font-size:12px;opacity:.6;align-self:center";
-    d.textContent=`${rooms.length} rooms — see per-room figures in the Rooms panel and report`;
+    d.textContent=`Select a room (or a fitting in it) to see its full compliance figures here`;
     head.appendChild(d);
   }else{
     const d=document.createElement("div");

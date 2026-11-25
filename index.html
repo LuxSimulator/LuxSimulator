@@ -2899,11 +2899,18 @@ function compute(){
         // light that reached the ceiling directly, so the ceiling bounce of it is
         // taken patch by patch too.
         // Likewise a washed wall lights the ceiling beside it, not all of it.
+        // A16b: with the fittings in, every bounce is solved patch by patch
+        // (patchRad) — the 3-node values above remain only for the old route.
+        // rooms WITH furniture keep the 3-surface solve: measured on Radiance, the
+        // furnished office reads U0 +8% there against +19..27% patch by patch.
+        const PR=BOUNCE_RAD&&reg.dep&&!(Aside>0)&&!fastPreview?patchRad(reg.dep,room.rhoC,room.rhoW,rP,reg.pts,reg.openIv,gAll,cellIdx,nx,ny,L,W,cellA,area,null):null;
+        if(!PR){
         if(reg.dep&&reg.dep.wTot>0)stripWallToCeil(reg.dep,rw);
         if(BOUNCE_RAD){if(reg.dep&&(reg.sumS+reg.sumE)>0)stripFloorToCeil(reg.dep,gAll,cellIdx,nx,ny,L,W,cellA,rP);}
         else if(reg.dep&&gS&&reg.sumS>0)stripFloorToCeil(reg.dep,gS,cellIdx,nx,ny,L,W,cellA,rP);
+        }
         let es=0;
-        const fb1=reg.dep&&(reg.dep.cTot>0||reg.dep.wTot>0)?stripFirstBounce(reg.dep,reg.rv,cellIdx,nx,ny,L,W):null;
+        const fb1=!PR&&reg.dep&&(reg.dep.cTot>0||reg.dep.wTot>0)?stripFirstBounce(reg.dep,reg.rv,cellIdx,nx,ny,L,W):null;
         const Mc2=fb1?Mc-rc*reg.dep.cTot/area:Mc, Mw2=fb1?Mw-rw*reg.dep.wTot/Aw:Mw;
         // A16: furniture hides part of the room from a point beside it — the
         // bounced light it receives is scaled by the cosine-weighted share of
@@ -2926,7 +2933,7 @@ function compute(){
             // by the same room)
             vis[c]=(open+(fitVisDirs.length-open)*kBlk)/fitVisDirs.length;}
         }
-        for(let c=0;c<cellIdx.length;c++){const v=(Mc2*fcA[c]+Mw2*(1-fcA[c])+(fb1?fb1[c]:0))*(vis?vis[c]:1);grid[cellIdx[c]]+=v;es+=v;}
+        for(let c=0;c<cellIdx.length;c++){const v=(PR?PR[c]:(Mc2*fcA[c]+Mw2*(1-fcA[c])+(fb1?fb1[c]:0)))*(vis?vis[c]:1);grid[cellIdx[c]]+=v;es+=v;}
         ambientSum+=es/cellIdx.length;
       }
     }
@@ -3794,6 +3801,92 @@ function stripFirstBounce(D,room,cellIdx,nx,ny,L,W){
   return out;
 }
 
+// PATCH RADIOSITY (A16b, 2026-11-25). The 3-surface zonal solve treats each
+// surface as evenly lit for every bounce after the first, so a room whose
+// light lands on part of its walls (spots aimed at the walls, wall-washers)
+// lit its far corners as if the whole wall glowed: S4 at 90 deg read corners
+// +27% on Radiance. Here every ceiling, wall and plane patch exchanges with
+// every other by its own geometry (Lambertian point-to-patch, rows normalised
+// so the closed enclosure conserves flux; an opening is a patch that absorbs),
+// and the plane points then read all bounces from where the light really is.
+// Returns indirect lux per cell of cellIdx (maintained, like the inputs).
+function patchRad(D,rc,rw,rP,pts,openIv,gAll,cellIdx,nx,ny,L,W,cellA,areaR,obs){
+  const P=[];
+  const nC=D.nxC*D.nyC, ca=D.cs*D.cs, floorBin=new Float64Array(nC);
+  for(const idx of cellIdx){const v=gAll[idx];if(!(v>0))continue;
+    const x=((idx%nx)+0.5)/nx*L, y=(((idx/nx)|0)+0.5)/ny*W;
+    const ix=Math.max(0,Math.min(D.nxC-1,Math.floor((x-D.x0)/D.cs))), iy=Math.max(0,Math.min(D.nyC-1,Math.floor((y-D.y0)/D.cs)));
+    floorBin[iy*D.nxC+ix]+=v*cellA;}
+  // ceiling and plane lattices: cells whose centre is in the room, or that carry flux
+  const keep=[];
+  for(let j=0;j<D.nyC;j++)for(let i=0;i<D.nxC;i++){const k=j*D.nxC+i, cx=D.x0+(i+0.5)*D.cs, cy=D.y0+(j+0.5)*D.cs;
+    if(pip({x:cx,y:cy},pts)||D.ceil[k]>0||floorBin[k]>0)keep.push([k,cx,cy]);}
+  const aK=keep.length?areaR/keep.length:ca;          // lattice areas add up to the room's
+  for(const [k,cx,cy] of keep){
+    const sK=Math.sqrt(aK);
+    P.push([cx,cy,D.H,0,0,-1,aK,rc,D.ceil[k],1,0,0,sK,0,1,0,sK]);
+    P.push([cx,cy,D.wp,0,0,1,aK,rP,floorBin[k],1,0,0,sK,0,1,0,sK]);
+  }
+  D.edges.forEach((E,e)=>{if(!(E.L>1e-6))return;
+    const ol=openIv&&openIv[e]&&openIv[e].length?openIv[e]:null;
+    for(let si=0;si<E.ns;si++)for(let bi=0;bi<D.nb;bi++){
+      const t=(si+0.5)*E.sl, z=D.wp+(bi+0.5)*D.bh, v=ol?ivAt(ol,t):null, open=!!v&&!(z>v[2]);
+      // an OPENING to a joined room: the room beyond returns about what it is
+      // sent, so it stands in as a surface at wall reflectance (its direct flux
+      // already went through - none is deposited on it)
+      P.push([E.a.x+E.ux*t,E.a.y+E.uy*t,z,E.nx,E.ny,0,E.sl*D.bh,rw,open?0:E.flux[si*D.nb+bi],E.ux,E.uy,0,E.sl,0,0,1,D.bh]);
+    }});
+  // FURNITURE as surfaces of its own: four sides (the part above the plane)
+  // and the top, at the block's reflectance. They take part in every bounce
+  // and absorb what they do not reflect. Direct light on them is not cast
+  // (it is simply missing from the plane), so they start dark.
+  if(obs)for(const o of obs){const cx=(o.x0+o.x1)/2,cy=(o.y0+o.y1)/2;if(!pip({x:cx,y:cy},pts))continue;
+    const w=o.x1-o.x0,dd=o.y1-o.y0,hh=o.h-D.wp;
+    if(hh>0.02){const zc=D.wp+hh/2;
+      P.push([cx,o.y0,zc,0,-1,0,w*hh,o.rho,0,1,0,0,w,0,0,1,hh]);P.push([cx,o.y1,zc,0,1,0,w*hh,o.rho,0,1,0,0,w,0,0,1,hh]);
+      P.push([o.x0,cy,zc,-1,0,0,dd*hh,o.rho,0,0,1,0,dd,0,0,1,hh]);P.push([o.x1,cy,zc,1,0,0,dd*hh,o.rho,0,0,1,0,dd,0,0,1,hh]);}
+    if(o.h>D.wp+0.02)P.push([cx,cy,o.h,0,0,1,w*dd,o.rho,0,1,0,0,w,0,1,0,dd]);}
+  const N=P.length;if(!N)return null;
+  // exchange: f[j*N+i] = share of j's exitant flux that lands on i
+  const f=new Float32Array(N*N);
+  for(let j=0;j<N;j++){const q=P[j];let s=0;
+    for(let i=0;i<N;i++){if(i===j)continue;const p=P[i];
+      const dx=p[0]-q[0],dy=p[1]-q[1],dz=p[2]-q[2],d2=dx*dx+dy*dy+dz*dz;if(d2<1e-9)continue;
+      const d=Math.sqrt(d2), cj=(dx*q[3]+dy*q[4]+dz*q[5])/d, ci=-(dx*p[3]+dy*p[4]+dz*p[5])/d;
+      if(cj<=0||ci<=0)continue;
+      const v=p[6]*cj*ci/(Math.PI*Math.max(d2,p[6]/Math.PI));f[j*N+i]=v;s+=v;}
+    if(s>0){const k=1/s;for(let i=0;i<N;i++)f[j*N+i]*=k;}}
+  // exitant flux B = rho (E + sum_j f_ji B_j), Jacobi
+  let B=new Float64Array(N);for(let i=0;i<N;i++)B[i]=P[i][7]*P[i][8];
+  for(let it=0;it<80;it++){const inc=new Float64Array(N);
+    for(let j=0;j<N;j++){const b=B[j];if(!(b>0))continue;const o=j*N;for(let i=0;i<N;i++){const v=f[o+i];if(v)inc[i]+=v*b;}}
+    let dd=0,tot=0;
+    for(let i=0;i<N;i++){const nb=P[i][7]*(P[i][8]+inc[i]);dd+=Math.abs(nb-B[i]);tot+=nb;B[i]=nb;}
+    if(dd<=1e-7*Math.max(1,tot))break;}
+  // what the plane points receive from the ceiling and wall patches (the plane's
+  // own patches are coplanar with the points and send them nothing)
+  const src=[];for(let i=0;i<N;i++){const p=P[i];if(p[5]>0||!(B[i]>0))continue;src.push([p[0],p[1],p[2],p[3],p[4],p[5],B[i]/p[6],p[6],p[9],p[10],p[11],p[12],p[13],p[14],p[15],p[16]]);}
+  const Ept=(px,py,pz)=>{let e=0;
+    for(const q of src){const vx=px-q[0],vy=py-q[1],vz=pz-q[2],d2=vx*vx+vy*vy+vz*vz,d=Math.sqrt(d2);
+      const c1=(vx*q[3]+vy*q[4]+vz*q[5])/d, c2=-vz/d;
+      if(c1>0&&c2>0)e+=q[6]*q[7]*c1*c2/(Math.PI*Math.max(d2,q[7]/Math.PI));}
+    return e;};
+  let bx0=Infinity,by0=Infinity,bx1=-Infinity,by1=-Infinity;
+  for(const idx of cellIdx){const x=((idx%nx)+0.5)/nx*L,y=(((idx/nx)|0)+0.5)/ny*W;
+    if(x<bx0)bx0=x;if(x>bx1)bx1=x;if(y<by0)by0=y;if(y>by1)by1=y;}
+  const st=Math.max(Math.min(L/nx,W/ny),Math.sqrt(Math.max(1e-6,(bx1-bx0)*(by1-by0))/400));
+  const mx=Math.max(1,Math.ceil((bx1-bx0)/st))+1,my=Math.max(1,Math.ceil((by1-by0)/st))+1;
+  const lat=new Float64Array(mx*my);
+  for(let j=0;j<my;j++)for(let i=0;i<mx;i++)lat[j*mx+i]=Ept(bx0+i*st,by0+j*st,D.wp);
+  const out=new Float64Array(cellIdx.length);
+  for(let c=0;c<cellIdx.length;c++){const idx=cellIdx[c];
+    const fx=Math.min(mx-1,Math.max(0,((((idx%nx)+0.5)/nx*L)-bx0)/st)), fy=Math.min(my-1,Math.max(0,((((idx/nx)|0)+0.5)/ny*W-by0)/st));
+    const i=Math.min(mx-2,Math.floor(fx)),j=Math.min(my-2,Math.floor(fy));
+    if(i<0||j<0){out[c]=lat[0];continue;}
+    const u=fx-i,v=fy-j;
+    out[c]=lat[j*mx+i]*(1-u)*(1-v)+lat[j*mx+i+1]*u*(1-v)+lat[(j+1)*mx+i]*(1-u)*v+lat[(j+1)*mx+i+1]*u*v;}
+  return out;
+}
 // A27 — FITTINGS' FIRST BOUNCE, from where their light actually lands.
 // A fitting's output as a set of WORLD-frame ray directions for the strip
 // ray-cast (stripBuckets): sampled in the LUMINAIRE frame, finely near the beam

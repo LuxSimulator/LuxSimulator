@@ -1460,6 +1460,13 @@ function hitMeasure(p){
 let lastShift=false;         // shift held during last pointer move
 let viewZoom=1,viewX=0,viewY=0;  // view transform (zoom + pan of the plan view)
 let spaceDown=false,viewPanStart=null;
+// PAN BUG (Gus 25/11/2026): a middle-button press started the browser's own
+// auto-scroll on Windows, which froze the page until Esc. The press is ours.
+document.addEventListener("DOMContentLoaded",()=>{const c=document.getElementById("plan");if(!c)return;
+  c.addEventListener("mousedown",e=>{if(e.button===1)e.preventDefault();});
+  c.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});});
+// a key released while the window was away leaves no keyup: never stay in pan
+addEventListener("blur",()=>{spaceDown=false;viewPanStart=null;});
 let gridDrag=null;           // {h:'move'|'l'|'r'|'t'|'b'|combos, last:{x,y}} while dragging the grid
 
 // `sort` is DISPLAY order only — the array index is the stored room type and must
@@ -6544,6 +6551,8 @@ cv.addEventListener("pointerdown",e=>{
   if(spaceDown||e.button===1){
     e.preventDefault();
     viewPanStart={x:e.clientX,y:e.clientY,vx:viewX,vy:viewY};
+    // keep the pan when the pointer leaves the drawing mid-drag
+    try{cv.setPointerCapture(e.pointerId);}catch(_){}
     cv.style.cursor="grabbing";
     return;
   }

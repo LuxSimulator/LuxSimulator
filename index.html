@@ -171,6 +171,23 @@
   body[data-mode]:not([data-mode="place"]) .fx-ready{display:none}
   body[data-mode]:not([data-mode="place"]) .fixture.sel{border-color:var(--line2)!important}
   .fx-tg{font-size:12px}
+  /* FILE GROUP - colour per action */
+  .filegrp{display:flex;align-items:center;gap:5px;padding:3px;border:1px solid var(--line2);border-radius:10px;background:var(--card)}
+  .filegrp .sep{width:1px;height:22px;background:var(--line2);margin:0 2px}
+  .filegrp .btn{--fc:var(--btnText);color:var(--fc);border-color:color-mix(in srgb,var(--fc) 55%,transparent);
+    background:color-mix(in srgb,var(--fc) 12%,var(--btnBg));font-weight:600}
+  .filegrp .btn:hover{background:color-mix(in srgb,var(--fc) 24%,var(--btnBg))}
+  .filegrp .fb-open{--fc:#4d9bff}
+  .filegrp .fb-save{--fc:#2fbf6a;background:#1f9d55;border-color:#1f9d55;color:#fff}
+  .filegrp .fb-save:hover{background:#23b062}
+  .filegrp .fb-imp{--fc:var(--btnText);font-weight:500}
+  .filegrp .fb-pdf{--fc:#ff5a4f}
+  .filegrp .fb-dxf{--fc:#f0a92a}
+  .filegrp .fb-csv{--fc:#27b8a8}
+  :root[data-theme="light"] .filegrp .fb-open{--fc:#1f63c4}
+  :root[data-theme="light"] .filegrp .fb-pdf{--fc:#c4211b}
+  :root[data-theme="light"] .filegrp .fb-dxf{--fc:#a86a00}
+  :root[data-theme="light"] .filegrp .fb-csv{--fc:#0f7d70}
   /* SHORTCUT SHEET (?) */
   #keySheet{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
   #keySheet[hidden]{display:none}
@@ -729,13 +746,19 @@
          are now deliberately unalike - a grid for CSV, a red book for PDF - and
          the label carries the meaning either way. Settings and theme stay
          icon-only because there is exactly one of each. -->
-    <button class="btn sm" id="exportCsv" title="Setting-out coordinates and per-room figures, as a spreadsheet">▦ Export CSV</button>
-    <button class="btn sm" id="exportPdf" title="Full illuminance design check as a PDF">📕 Export PDF</button>
-    <button class="btn sm" id="exportDxf" title="Layout as DXF for the drawing set — fittings as blocks, rooms, lux grid, on separate layers">📐 Export DXF</button>
+    <!-- FILE GROUP (Gus 26/11/2026): the most-used buttons, together and colour
+         coded so each reads at a glance - Open blue, Save green (Ctrl+S),
+         Import neutral, PDF red, DXF amber, CSV teal. -->
+    <div class="filegrp">
+    <button class="btn sm fb-open" id="loadModel" title="Open a saved .luxmodel (Ctrl+O)">📂 Open model</button>
+    <button class="btn sm fb-save" id="saveModel" title="Save the whole design as a .luxmodel you can reopen (Ctrl+S)">💾 Save model</button>
     <span class="sep"></span>
-    <button class="btn sm" id="planImportPdf" title="Import a floor plan (PDF or image) as the drawing underlay" onclick="document.getElementById('underlayFile').click()">📄 Import PDF</button>
-    <button class="btn sm" id="saveModel" title="Save the whole design as a .luxmodel you can reopen">💾 Save model</button>
-    <button class="btn sm" id="loadModel" title="Open a saved .luxmodel">📂 Open model</button>
+    <button class="btn sm fb-imp" id="planImportPdf" title="Import a floor plan (PDF or image) as the drawing underlay" onclick="document.getElementById('underlayFile').click()">📄 Import PDF</button>
+    <span class="sep"></span>
+    <button class="btn sm fb-pdf" id="exportPdf" title="Full illuminance design check as a PDF">📕 Export PDF</button>
+    <button class="btn sm fb-dxf" id="exportDxf" title="Layout as DXF for the drawing set — fittings as blocks, rooms, lux grid, on separate layers">📐 Export DXF</button>
+    <button class="btn sm fb-csv" id="exportCsv" title="Setting-out coordinates and per-room figures, as a spreadsheet">▦ Export CSV</button>
+    </div>
     
   </div>
     </div>
@@ -7195,6 +7218,9 @@ window.addEventListener("keydown",e=>{
     // Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo
     if(k==="z"&&!e.shiftKey){e.preventDefault();undo();return;}
     if(k==="y"||(k==="z"&&e.shiftKey)){e.preventDefault();redo();return;}
+    // Ctrl+S save / Ctrl+O open, as every desktop and web app does
+    if(k==="s"){e.preventDefault();$("saveModel").click();return;}
+    if(k==="o"){e.preventDefault();$("loadModel").click();return;}
   }
   if(e.code==="Space"&&document.activeElement.tagName!=="INPUT"&&document.activeElement.tagName!=="SELECT"){
     if(!spaceDown){spaceDown=true;if(!viewPanStart)cv.style.cursor="grab";}

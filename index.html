@@ -1233,7 +1233,11 @@ const FITTING_LIB=[
  // @ 3000 K (HV8028W; 130 lm @ 5500 K for HV8028C), 120 deg beam, IP20,
  // surface wall mount, W150 x H50 x P80 mm. Equal light up and down (upFrac
  // 0.5, from the beam pictogram). No IES - parametric, indicative.
- {code:"W5",  name:"W5 Wall Up/Down (Havit Concept HV8028W 2W G9, 120°) — NO IES", watts:2, lumens:120, cct:3000, beam:120, shape:"wall", mountH:1.8, upFrac:0.5, boxM:[0.15,0.08,0.05]},
+ // Library default per Gus 26/11/2026: 25 W / 2500 lm / 4000 K (the scheduled
+ // lamp; the datasheet max is 25 W, its supplied G9 lamp is 2 W / 120 lm).
+ // Radiance 26/11/2026, 5 off at 2 m on a 20x4x3 m wall: direct +0.6%,
+ // total avg +5%, min -1%, U0 -6% (conservative).
+ {code:"W5",  name:"W5 Wall Up/Down (Havit Concept HV8028, 25W, 120°) — NO IES", watts:25, lumens:2500, cct:4000, beam:120, shape:"wall", mountH:1.8, upFrac:0.5, boxM:[0.15,0.08,0.05]},
  {code:"W3",  name:"W3 Wall (GUWL78 10W)",  watts:10.473,lumens:349.3,  cct:3000, beam:110, shape:"wall", iesId:"W3"},
  // W4 — GREENLUX Sahara Series, outdoor IP65 triangle wall light, matt black.
  // From greenluxstore.com.au: 20 W, 2200 lm (110 lm/W), 5000K, CRI80, beam 120,

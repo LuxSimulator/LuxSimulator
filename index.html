@@ -167,6 +167,9 @@
   .fx-sum .n{color:#e0a92a;border-color:#e0a92a}
   .fx-sum .cnt{margin-left:auto;color:var(--text);opacity:.8}
   .fx-body{margin-top:8px}
+  /* the active card only reads "ready to place" while placing is what a click does */
+  body[data-mode]:not([data-mode="place"]) .fx-ready{display:none}
+  body[data-mode]:not([data-mode="place"]) .fixture.sel{border-color:var(--line2)!important}
   .fx-tg{font-size:12px}
   /* COMPACT TOOLBAR (Gus 26/11/2026) */
   .tsep{width:1px;height:20px;background:var(--line2);margin:0 2px}
@@ -5795,7 +5798,7 @@ function setMode(m){
   if(m!=="place"&&selectedStrip!=null){selectedStrip=null;renderStrips();}
   if(m!=="select"){selClear();selBox=null;selMove=null;}
   if(m!=="cutwall")cutPts=[];
-  mode=m;if(typeof setTab==="function"){if(m==="rooms"||m==="cutwall")setTab("rooms");else if(m==="furn")setTab("furn");}calA=null;roomA=null;measA=null;selectedMeas=null;gridDrag=null;detA=null;roomDrag=null;if(m!=="rooms")selectedRoom=null;
+  mode=m;document.body.dataset.mode=m;if(typeof setTab==="function"){if(m==="rooms"||m==="cutwall")setTab("rooms");else if(m==="furn")setTab("furn");}calA=null;roomA=null;measA=null;selectedMeas=null;gridDrag=null;detA=null;roomDrag=null;if(m!=="rooms")selectedRoom=null;
   furnA=null;if(m!=="furn")selectedObst=null;
   $("calibrateBtn").classList.toggle("active",m==="calibrate");
   $("panBtn").classList.toggle("active",m==="pan");
@@ -6119,7 +6122,7 @@ function renderFixtures(){
     card.className="fixture"+(activeFixture===f.id?" sel":"");
     card.style.borderColor=activeFixture===f.id?f.color:"var(--line2)";
     if(activeFixture===f.id)card.dataset.active="1";
-    card.onclick=()=>{if(mode==="select")setMode("place");if(activeFixture!==f.id){activeFixture=f.id;renderFixtures();updateStats();}};
+    card.onclick=()=>{if(mode!=="place")setMode("place");if(activeFixture!==f.id){activeFixture=f.id;renderFixtures();updateStats();}};
     const head=document.createElement("div");head.className="fx-head";
     const dot=document.createElement("span");dot.className="dot";dot.style.background=f.color;
     // Battens read black on the plan, so the swatch is black too — the panel has
@@ -6418,7 +6421,7 @@ $("libSel").addEventListener("change",libIesNote);libIesNote();
 })();
 function libAddSelected(){
   const f=addFixtureFromLib($("libSel").value);
-  if(mode==="select")setMode("place");
+  if(mode!=="place")setMode("place");
   activeFixture=f.id;renderFixtures();refresh();
   // scroll the new card into view: adding from a 61-entry catalogue otherwise
   // gives no sign anything happened, which is exactly the complaint.

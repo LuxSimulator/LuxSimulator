@@ -171,6 +171,16 @@
   body[data-mode]:not([data-mode="place"]) .fx-ready{display:none}
   body[data-mode]:not([data-mode="place"]) .fixture.sel{border-color:var(--line2)!important}
   .fx-tg{font-size:12px}
+  /* SHORTCUT SHEET (?) */
+  #keySheet{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
+  #keySheet[hidden]{display:none}
+  #keySheet .ks{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:16px 18px;width:min(420px,92vw);
+    max-height:86vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.5);border-top:3px solid var(--accent)}
+  #keySheet .ks-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;
+    font:700 12px ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase}
+  #keySheet .ks-r{display:grid;grid-template-columns:120px 1fr;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px;align-items:center}
+  #keySheet kbd{font:600 11px ui-monospace,monospace;background:var(--card);border:1px solid var(--line2);border-bottom-width:2px;
+    border-radius:5px;padding:2px 7px;justify-self:start;color:var(--text)}
   /* COMPACT TOOLBAR (Gus 26/11/2026) */
   .tsep{width:1px;height:20px;background:var(--line2);margin:0 2px}
   .tgrp{position:relative;display:inline-flex;align-items:center;gap:6px}
@@ -315,8 +325,8 @@
   /* the tools at the foot of the rail, and whose it is */
   #rail .toolbar{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:9px;
     padding-top:11px;border-top:1px solid var(--line)}
-  #rail .toolrow{display:grid;grid-template-columns:repeat(3,41px);gap:8px;justify-content:center}
-  .btn.ico{width:41px;height:41px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:10px}
+  #rail .toolrow{display:grid;grid-template-columns:repeat(4,38px);gap:6px;justify-content:center}
+  .btn.ico{width:38px;height:38px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:10px}
   .btn.ico svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;
     stroke-linejoin:round;pointer-events:none;transition:transform .3s var(--bounce)}
   .btn.ico:hover svg{transform:scale(1.12)}
@@ -512,6 +522,7 @@
       <button class="btn ico" id="btnAppFull" type="button" title="Full screen — hide the browser and leave only the app"></button>
       <button class="btn ico" id="settingsBtn" type="button" title="Setup" aria-label="Setup"></button>
       <button class="btn ico" id="themeBtn" type="button" title="Light or dark" aria-label="Switch theme"></button>
+      <button class="btn ico" id="keysBtn" type="button" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" onclick="showKeySheet()"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="4" width="13" height="8.5" rx="1.5"/><path d="M4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M5 9.8h6"/></svg></button>
     </div>
     <div class="menuwrap" hidden><div class="menu" id="settingsMenu" hidden></div></div>
     <span class="rolechip" title="AED Project Services"><span class="dot"></span><b>AED</b></span>
@@ -7137,6 +7148,32 @@ document.addEventListener("change",e=>{
   setTimeout(()=>{if(!undoBusy&&snapState()!==before)commitUndo(before);},0);
 },true);
 
+// Tool keys. Letters, not Ctrl-chords, so one hand stays on the mouse. M is
+// handled above (measure); R rotates the selected fitting; Esc = Select.
+const TOOLKEYS={
+  v:{btn:"selectBtn",d:"Select"},
+  b:{btn:"defRoomBtn",d:"Rooms (boundaries)"},
+  x:{btn:"cutWallBtn",d:"Cut wall"},
+  u:{btn:"furnBtn",d:"Furniture / columns"},
+  k:{btn:"calibrateBtn",d:"Calibrate the drawing"},
+  f:{btn:"zoomFit",d:"Zoom to fit"},
+  l:{fn:()=>{setTab("fit");const i=$("libSearch");if(i)i.focus();},d:"Find a fitting in the library"},
+  "=":{btn:"zoomIn",d:"Zoom in"},"+":{btn:"zoomIn",d:"Zoom in"},"-":{btn:"zoomOut",d:"Zoom out"}
+};
+const KEY_EXTRA=[["M","Measure"],["R","Turn the selected fitting 45°"],["Esc","Select tool / clear selection"],["Enter","Repeat the last tool"],
+  ["Space + drag","Pan"],["Wheel","Zoom"],["Ctrl+Z / Ctrl+Y","Undo / redo"],["Ctrl+C / Ctrl+V","Copy / paste a fitting"],
+  ["Ctrl+A","Select all (Select tool)"],["Delete","Delete the selection"],["Ctrl+click","Turn a fitting 45° (Select tool)"],["?","This list"]];
+for(const k in TOOLKEYS){const T=TOOLKEYS[k];if(!T.btn||!/^[a-z]$/.test(k))continue;const b=$(T.btn);if(b&&b.title&&!/\(\w\)$/.test(b.title))b.title+=" ("+k.toUpperCase()+")";}
+function showKeySheet(){
+  let o=$("keySheet");
+  if(!o){o=document.createElement("div");o.id="keySheet";o.onclick=e=>{if(e.target===o)o.hidden=true;};document.body.appendChild(o);}
+  const rows=[...Object.entries(TOOLKEYS).filter(([k])=>k!=="+").map(([k,T])=>[k==="="?"+ / =":k.toUpperCase(),T.d]),...KEY_EXTRA];
+  o.innerHTML='<div class="ks"><div class="ks-h"><b>Keyboard shortcuts</b><button class="xbtn" type="button">✕</button></div>'
+    +rows.map(([k,d])=>`<div class="ks-r"><kbd>${k}</kbd><span>${d}</span></div>`).join("")+"</div>";
+  o.querySelector(".xbtn").onclick=()=>{o.hidden=true;};
+  o.hidden=false;
+}
+window.addEventListener("keydown",e=>{if(e.key==="Escape"){const o=$("keySheet");if(o&&!o.hidden){o.hidden=true;e.stopImmediatePropagation();}}},true);
 window.addEventListener("keydown",e=>{
   const typing=document.activeElement&&(document.activeElement.tagName==="INPUT"||document.activeElement.tagName==="SELECT");
   // LED strip drawing / editing keys
@@ -7177,6 +7214,13 @@ window.addEventListener("keydown",e=>{
     e.preventDefault();
     setMode(mode==="measure"?"place":"measure");
     return;
+  }
+  // SINGLE-KEY TOOLS (Gus 26/11/2026, CAD / web-app convention): one letter
+  // picks a tool, the same letter again drops it; ? lists them all.
+  if(!typing&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&e.key.length===1){
+    const k=e.key.toLowerCase(), T=TOOLKEYS[k];
+    if(T){e.preventDefault();if(T.btn){const b=$(T.btn);if(b&&!b.disabled)b.click();}else T.fn();return;}
+    if(e.key==="?"){e.preventDefault();showKeySheet();return;}
   }
   // Esc ALWAYS lands on the arrow (Select), from any tool; a second Esc there
   // clears the selection.

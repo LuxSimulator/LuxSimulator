@@ -161,6 +161,13 @@
   .note{font-size:10.5px;opacity:.5;margin:-2px 0 6px}
   .sect-t .sinfo{margin-left:6px;font-size:11px;opacity:.5;cursor:help;font-weight:400}
   .sect-t .sinfo:hover{opacity:1;color:var(--accent)}
+  .fx-sum{font:11px ui-monospace,monospace;color:var(--dim);margin:2px 0 2px;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
+  .fx-sum .y,.fx-sum .n{font:600 9.5px system-ui,sans-serif;letter-spacing:.06em;padding:1px 6px;border-radius:9px;border:1px solid}
+  .fx-sum .y{color:var(--ok);border-color:var(--ok)}
+  .fx-sum .n{color:#e0a92a;border-color:#e0a92a}
+  .fx-sum .cnt{margin-left:auto;color:var(--text);opacity:.8}
+  .fx-body{margin-top:8px}
+  .fx-tg{font-size:12px}
   /* COMPACT TOOLBAR (Gus 26/11/2026) */
   .tsep{width:1px;height:20px;background:var(--line2);margin:0 2px}
   .tgrp{position:relative;display:inline-flex;align-items:center;gap:6px}
@@ -571,7 +578,7 @@
       <div class="sect-t">Rooms</div>
       <div class="note">Click a room's name to rename it — use the real tenancy or area name and it carries through to the plan and the report.</div>
       <div id="roomList"></div>
-      <div class="note" id="roomsEmpty">No rooms yet — hit 🏠 Rooms above: click two corners on empty space to create one, as many as you wish, at any point in the process. Click a room to select and drag; click a corner to pick it up and click to drop; click an edge to add a corner. Boundaries act as walls (toggle under Display). The report breaks fittings and power down per room.</div>
+      <div class="note" id="roomsEmpty" title="Click two corners on empty space to create one, as many as you wish, at any point in the process. Click a room to select and drag; click a corner to pick it up and click to drop; click an edge to add a corner. Boundaries act as walls (toggle under Display). The report breaks fittings and power down per room.">No rooms yet — 🏠 on the toolbar, then click two corners.</div>
     </section>
     <!-- FURNITURE. Sits directly under Rooms because it is the same kind of
          thing — something you draw on the plan that changes the answer — and
@@ -1215,6 +1222,12 @@ const FITTING_LIB=[
  // avg +3.9%; the bounce is spread evenly, so the far side and the minimum read
  // high (min 26 vs 9 lx) — BACKLOG A27.
  {code:"WW1", name:"WW1 Wall-wash down (Greenlux PIVOT GXPIV-SM-20W 30°, surface downlight on wall) — NO IES", watts:20, lumens:1900, cct:4000, beam:30, shape:"wall", mountH:3.0, boxM:[0.09,0.09,0.11]},
+ // W5 — Havit Concept HV8028 aluminium UP & DOWN wall light (datasheet, Aura
+ // alternate fittings, travelator option; Gus 26/11/2026). 2 W G9 LED, 120 lm
+ // @ 3000 K (HV8028W; 130 lm @ 5500 K for HV8028C), 120 deg beam, IP20,
+ // surface wall mount, W150 x H50 x P80 mm. Equal light up and down (upFrac
+ // 0.5, from the beam pictogram). No IES - parametric, indicative.
+ {code:"W5",  name:"W5 Wall Up/Down (Havit Concept HV8028W 2W G9, 120°) — NO IES", watts:2, lumens:120, cct:3000, beam:120, shape:"wall", mountH:1.8, upFrac:0.5, boxM:[0.15,0.08,0.05]},
  {code:"W3",  name:"W3 Wall (GUWL78 10W)",  watts:10.473,lumens:349.3,  cct:3000, beam:110, shape:"wall", iesId:"W3"},
  // W4 — GREENLUX Sahara Series, outdoor IP65 triangle wall light, matt black.
  // From greenluxstore.com.au: 20 W, 2200 lm (110 lm/W), 5000K, CRI80, beam 120,
@@ -1370,6 +1383,7 @@ function addFixtureFromLib(code){
     if(lib.tilt!=null)f.tilt=lib.tilt;
     if(lib.cOffset!=null)f.cOffset=lib.cOffset;
     if(lib.boxM)f.boxM=lib.boxM.slice();
+    if(lib.upFrac)f.upFrac=lib.upFrac;
   }else{
     const sh=inferShape(code);
     f={id,code:code.toUpperCase(),name:code.toUpperCase(),watts:10,lumens:1000,
@@ -2334,6 +2348,7 @@ function beamExponent(beamDeg){
 const CUTOFF_EPS=0.002, PREVIEW_EPS=0.05;
 let fastPreview=false;      // true while dragging/panning: speed over precision
 function sourceCutoff(s,maxR){
+  if(s.up)return 0.25;       // an up lobe lights nothing below it directly
   const contrib=R=>{
     const d2=R*R+s.h*s.h, d=Math.sqrt(d2), cos=s.h/d;
     let I;
@@ -2404,6 +2419,18 @@ function compute(){
       }
     }else{
       if(useIes)srcs.push({x:lt.x,y:lt.y,h,mh,ies:linkedIes,rotDeg,aim,iesScale:iesMul,cOff:+f.cOffset||0,fl:(linkedIes.computedFlux||linkedIes.ratedLumens||0)*iesMul});
+      else if(f.upFrac>0&&f.upFrac<1){
+        // UP & DOWN fitting (Gus 26/11/2026, Havit Concept W5): two cos^m lobes
+        // of the same beam, upFrac of the lumens straight up, the rest straight
+        // down. The up lobe gives the plane nothing directly (cosL<0 everywhere
+        // below it) and reaches it through the ray-cast bounce, off the ceiling
+        // and wall above - as a real up/down wall light does. upFrac 0 or absent
+        // = the single lobe below, unchanged.
+        const m=beamExponent(f.beam), lmU=(+f.lumens||0)*f.upFrac, lmD=(+f.lumens||0)-lmU;
+        srcs.push({x:lt.x,y:lt.y,m,h,mh,aim,I0:(lmD*(m+1))/(2*Math.PI),fl:lmD});
+        const R0=rotDeg*Math.PI/180;
+        srcs.push({x:lt.x,y:lt.y,m,h,mh,up:true,aim:{ca:Math.cos(R0),sa:Math.sin(R0),ct:-1,st:0},I0:(lmU*(m+1))/(2*Math.PI),fl:lmU});
+      }
       else{const m=beamExponent(f.beam);srcs.push({x:lt.x,y:lt.y,m,h,mh,aim,I0:(f.lumens*(m+1))/(2*Math.PI),fl:+f.lumens||0});}
     }
   }
@@ -4694,7 +4721,8 @@ function renderSelFit(){
   const spec=document.createElement("div");spec.className="fc-spec";
   spec.textContent=[n2(+f.watts||0)+" W",Math.round(lm)+" lm",(+f.beam||0)+"°",(+f.cct||0)+" K",
     n2(mh)+" m"+(lt.mh!=null?"*":""),tilt>0?"aim "+tilt+"° → "+Math.round(lt.rot||0)+"°":"rot "+Math.round(lt.rot||0)+"°",
-    pm,rm?rm.name:"no room",Math.round(luxAt(lt.x,lt.y))+" lx below"].join(" · ");
+    f.upFrac>0?"up "+Math.round(f.upFrac*100)+"% / down "+Math.round(100-f.upFrac*100)+"%":null,
+    pm,rm?rm.name:"no room",Math.round(luxAt(lt.x,lt.y))+" lx below"].filter(Boolean).join(" · ");
   const ctl=document.createElement("div");ctl.className="fc-ctl";
   const setRot=v=>withUndo(()=>{lt.rot=+((((v%360)+360)%360).toFixed(1));refresh();});
   const mk=(txt,tip,fn)=>{const b=document.createElement("button");b.className="btn sm";b.textContent=txt;b.title=tip;b.onclick=e=>{e.stopPropagation();fn();};return b;};
@@ -6071,6 +6099,7 @@ function updateUndoUi(){
 }
 
 // ---------------- fixtures panel ----------------
+const fxOpen=new Set();      // fitting cards opened by the user (UI only, not saved)
 function renderFixtures(){
   renderStrips();
   const PAL=FIXTURE_COLORS;
@@ -6311,6 +6340,26 @@ function renderFixtures(){
       rdy.textContent=isStrip(f)?"▸ Active — click the plan to draw a run":"▸ Active — click the plan to place";
       card.appendChild(rdy);
     }
+    // COMPACT CARD (Gus 26/11/2026, League Manager style): one summary line;
+    // ▾ opens the fields and notes. A card with a warning on it opens itself.
+    {
+      const kids=[...card.children].filter(c=>c!==head&&!c.classList.contains("fx-ready"));
+      const body=document.createElement("div");body.className="fx-body";
+      for(const c of kids)body.appendChild(c);
+      const warn=body.querySelector('.note[style*="e0a92a"]')||[...body.querySelectorAll("div")].some(d=>d.style.color==="var(--bad)");
+      const open=fxOpen.has(f.id)||!!warn;
+      const has=f.iesId&&typeof IES_LIB!=="undefined"&&IES_LIB[f.iesId]&&f.photoMode!=="param";
+      const n=isStrip(f)?strips.filter(z=>z.fixtureId===f.id).length:lights.filter(l=>l.fixtureId===f.id).length;
+      const sum=document.createElement("div");sum.className="fx-sum";
+      sum.innerHTML=(isStrip(f)?[n2(+f.watts||0)+" W/m",Math.round(+f.lumens||0)+" lm/m",(+f.beam||0)+"°"]
+        :[n2(+f.watts||0)+" W",Math.round(+f.lumens||0)+" lm",(+f.beam||0)+"°",n2(+f.mountH||2.7)+" m"]).join(" · ")
+        +` <span class="${has?"y":"n"}">${has?"IES":"no IES"}</span><span class="cnt">${n} ${isStrip(f)?"run":"placed"}</span>`;
+      const tg=document.createElement("button");tg.className="xbtn fx-tg";tg.textContent=open?"▴":"▾";tg.title=open?"Hide details":"Show fields and photometry";
+      tg.onclick=e=>{e.stopPropagation();if(fxOpen.has(f.id))fxOpen.delete(f.id);else fxOpen.add(f.id);renderFixtures();};
+      head.insertBefore(tg,head.querySelector(".xbtn"));
+      body.hidden=!open;
+      card.insertBefore(sum,head.nextSibling);card.insertBefore(body,sum.nextSibling);
+    }
     list.appendChild(card);
   });
 }
@@ -6503,8 +6552,8 @@ function renderRooms(){
     opb.onclick=e=>e.stopPropagation();
     opb.onchange=e=>{r.open=e.target.checked;refresh();};
     const opl=document.createElement("span");
-    opl.textContent="Open area — no walls / no roof";
-    opl.title=opb.title;
+    opl.textContent="Outdoor";
+    opl.title="Open area — no walls, no roof. "+(opb.title||"");
     row2b.appendChild(opb);row2b.appendChild(opl);
     // Task area: AS/NZS 1680.1 Table 3.2(c) — 0.7 over the TASK area. Only for a
     // room drawn round the task itself (a bench, a counter, a desk zone); a
@@ -6514,7 +6563,7 @@ function renderRooms(){
       tkb.title="This room is drawn as the TASK AREA itself: uniformity must be at least 0.7 over it (AS/NZS 1680.1 Table 3.2(c)). Leave off for a whole room.";
       tkb.onclick=e=>e.stopPropagation();
       tkb.onchange=e=>{withUndo(()=>{if(e.target.checked)r.task=true;else delete r.task;});renderRooms();refresh();};
-      const tkl=document.createElement("span");tkl.textContent="Task area (U₀ ≥ 0.7)";tkl.title=tkb.title;
+      const tkl=document.createElement("span");tkl.textContent="Task area";tkl.title=tkb.title;
       row2b.appendChild(tkb);row2b.appendChild(tkl);
     }
     // row 2c: per-room working plane. Blank = follow the global field, which is

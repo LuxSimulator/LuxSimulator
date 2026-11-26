@@ -6386,8 +6386,8 @@ $("libSel").addEventListener("change",libIesNote);libIesNote();
   const FAM={D:"Downlights",P:"Pendants",W:"Wall lights",WL:"Wall lights",WW:"Wall washers",S:"Spots / track",L:"LED strip / linear",B:"Battens",HB:"High bays",EM:"Emergency",EX:"Exit signs",PL:"Floodlights",EPL:"Street / area",CAL:"Street / area",R:"Rapid range"};
   const esc=v=>String(v).replace(/</g,"&lt;");
   let items=[],on=0;
-  const add0=$("addLib").onclick;
-  const pick=code=>{$("libSel").value=code;libIesNote();drop.hidden=true;inp.value="";inp.blur();add0();};
+  // (the real add is libAddSelected, defined just below; looked up at click time)
+  const pick=code=>{$("libSel").value=code;libIesNote();drop.hidden=true;inp.value="";inp.blur();const ex=fixtures.find(f=>f.code===code);if(ex){if(mode!=="place")setMode("place");activeFixture=ex.id;renderFixtures();refresh();const el=document.querySelector('#fixtureList .fixture[data-active="1"]');if(el)el.scrollIntoView({block:"nearest"});}else libAddSelected();};
   // Add with nothing chosen opens the list
   $("addLib").onclick=()=>inp.focus();
   function list(){
@@ -6413,7 +6413,7 @@ $("libSel").addEventListener("change",libIesNote);libIesNote();
   drop.addEventListener("mousedown",e=>{const r=e.target.closest(".li");if(r){e.preventDefault();pick(items[+r.dataset.i].code);}});
   inp.addEventListener("blur",()=>setTimeout(()=>{drop.hidden=true;},120));
 })();
-$("addLib").onclick=()=>{
+function libAddSelected(){
   const f=addFixtureFromLib($("libSel").value);
   if(mode==="select")setMode("place");
   activeFixture=f.id;renderFixtures();refresh();
